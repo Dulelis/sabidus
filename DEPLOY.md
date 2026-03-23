@@ -27,53 +27,53 @@
 npx eas-cli login
 ```
 
-2. Crie a variavel publica no ambiente `production`:
-
-```powershell
-npx eas-cli env:create --name EXPO_PUBLIC_API_BASE_URL --value https://sabidus-api.onrender.com --environment production --visibility plaintext
-```
-
-3. Crie a mesma variavel no ambiente `preview`:
-
-```powershell
-npx eas-cli env:create --name EXPO_PUBLIC_API_BASE_URL --value https://sabidus-api.onrender.com --environment preview --visibility plaintext
-```
-
-4. Para publicar a web com a URL correta no bundle, puxe o ambiente `production` para o `.env.local`:
-
-```powershell
-npx eas-cli env:pull --environment production
-```
-
-5. O arquivo local ficara com este valor:
-
-```env
-EXPO_PUBLIC_API_BASE_URL=https://sabidus-api.onrender.com
-```
-
-6. Se quiser continuar usando API local no dia a dia, depois voce pode restaurar o `.env.local` manualmente.
-
-## 4. Publicar a versao web
-
-1. Se ainda nao vinculou o projeto ao Expo:
+2. Se ainda nao vinculou o projeto ao Expo:
 
 ```powershell
 npx eas-cli init
 ```
 
-3. Gere os arquivos web:
+3. Crie a variavel publica no ambiente `production`:
+
+```powershell
+npx eas-cli env:create --name EXPO_PUBLIC_API_BASE_URL --value https://sabidus-api.onrender.com --environment production --visibility plaintext
+```
+
+4. Crie a mesma variavel no ambiente `preview`:
+
+```powershell
+npx eas-cli env:create --name EXPO_PUBLIC_API_BASE_URL --value https://sabidus-api.onrender.com --environment preview --visibility plaintext
+```
+
+5. Para publicar a web com a URL correta no bundle, puxe o ambiente `production` para o `.env.local`:
+
+```powershell
+npx eas-cli env:pull --environment production
+```
+
+6. O arquivo local ficara com este valor:
+
+```env
+EXPO_PUBLIC_API_BASE_URL=https://sabidus-api.onrender.com
+```
+
+7. Se quiser continuar usando API local no dia a dia, depois voce pode restaurar o `.env.local` manualmente.
+
+## 4. Publicar a versao web
+
+1. Gere os arquivos web:
 
 ```powershell
 npm run export:web
 ```
 
-4. Publique a web:
+2. Publique a web:
 
 ```powershell
 npm run deploy:web
 ```
 
-5. O Expo vai devolver a URL publica da web no final do processo.
+3. O Expo vai devolver a URL publica da web no final do processo.
 
 ## 5. Gerar o APK Android
 

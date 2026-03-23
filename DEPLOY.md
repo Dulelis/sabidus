@@ -21,24 +21,41 @@
 
 ## 3. Configurar a URL publica no app
 
-1. Copie `.env.production.example` para `.env.production` na raiz do projeto.
-2. Ajuste a URL publica:
-
-```env
-EXPO_PUBLIC_API_BASE_URL=https://seu-backend.onrender.com
-```
-
-3. Mantenha `.env.local` para desenvolvimento local e `.env.production` para build/publicacao.
-
-## 4. Publicar a versao web
-
 1. Entre com sua conta Expo:
 
 ```powershell
 npx eas-cli login
 ```
 
-2. Se ainda nao vinculou o projeto ao Expo:
+2. Crie a variavel publica no ambiente `production`:
+
+```powershell
+npx eas-cli env:create --name EXPO_PUBLIC_API_BASE_URL --value https://sabidus-api.onrender.com --environment production --visibility plaintext
+```
+
+3. Crie a mesma variavel no ambiente `preview`:
+
+```powershell
+npx eas-cli env:create --name EXPO_PUBLIC_API_BASE_URL --value https://sabidus-api.onrender.com --environment preview --visibility plaintext
+```
+
+4. Para publicar a web com a URL correta no bundle, puxe o ambiente `production` para o `.env.local`:
+
+```powershell
+npx eas-cli env:pull --environment production
+```
+
+5. O arquivo local ficara com este valor:
+
+```env
+EXPO_PUBLIC_API_BASE_URL=https://sabidus-api.onrender.com
+```
+
+6. Se quiser continuar usando API local no dia a dia, depois voce pode restaurar o `.env.local` manualmente.
+
+## 4. Publicar a versao web
+
+1. Se ainda nao vinculou o projeto ao Expo:
 
 ```powershell
 npx eas-cli init

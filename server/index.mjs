@@ -1,9 +1,11 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const envPath = fileURLToPath(new URL('./.env', import.meta.url));
+const appConfigPath = fileURLToPath(new URL('../app.json', import.meta.url));
 dotenv.config({ path: envPath });
 
 const app = express();
@@ -48,6 +50,15 @@ function normalizeStringList(value, limit = 10) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, limit);
+}
+
+function getLatestAppVersion() {
+  try {
+    const appConfig = JSON.parse(readFileSync(appConfigPath, 'utf8'));
+    return appConfig?.expo?.version?.trim() || '1.0.0';
+  } catch {
+    return '1.0.0';
+  }
 }
 
 function getApiKey() {
@@ -162,6 +173,17 @@ app.get('/api/health', (_req, res) => {
     model,
     provider: 'gemini',
     configured: Boolean(geminiApiKey),
+  });
+});
+
+app.get('/api/app-update', (_req, res) => {
+  res.json({
+    ok: true,
+    latestVersion: getLatestAppVersion(),
+    downloadUrl: process.env.APP_UPDATE_URL?.trim() || '',
+    releaseNotes: process.env.APP_UPDATE_NOTES?.trim() || '',
+    publishedAt: process.env.APP_UPDATE_PUBLISHED_AT?.trim() || '',
+    isRequired: process.env.APP_UPDATE_REQUIRED === 'true',
   });
 });
 

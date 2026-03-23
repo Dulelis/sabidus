@@ -32,6 +32,15 @@ export type ApiHealthResponse = {
   configured: boolean;
 };
 
+export type AppUpdateResponse = {
+  ok: boolean;
+  latestVersion: string;
+  downloadUrl: string;
+  releaseNotes: string;
+  publishedAt: string;
+  isRequired: boolean;
+};
+
 type ExplanationRequest = {
   subject: string;
   question: string;
@@ -108,6 +117,16 @@ export async function requestApiHealth() {
   }
 
   return (await response.json()) as ApiHealthResponse;
+}
+
+export async function requestAppUpdate() {
+  const response = await fetch(`${API_BASE_URL}/api/app-update`);
+
+  if (!response.ok) {
+    throw new Error('Nao foi possivel verificar atualizacoes do app');
+  }
+
+  return (await response.json()) as AppUpdateResponse;
 }
 
 export async function requestExplanation(body: ExplanationRequest) {

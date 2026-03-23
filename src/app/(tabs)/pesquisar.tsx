@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 
 import { ScreenLayout } from '@/components/ScreenLayout';
+import { useStudy } from '@/context/StudyContext';
 import {
   articles,
   bookSuggestions,
@@ -12,8 +13,8 @@ import {
   studyMethods,
   videoLessons,
 } from '@/data/mockData';
+import { requestDeepSearch, type DeepSearchResponse } from '@/lib/apiClient';
 import { SearchScreen } from '@/screens/SearchScreen';
-import { useStudy } from '@/context/StudyContext';
 import type { UnifiedSearchResult } from '@/types/app';
 
 function normalizeSearchTerm(value: string) {
@@ -62,6 +63,9 @@ export default function SearchRoute() {
   const [selectedCourse, setSelectedCourse] = useState(
     params.course ?? activeSearchCourse ?? 'todos'
   );
+  const [themeInsight, setThemeInsight] = useState<DeepSearchResponse | null>(null);
+  const [isThemeInsightLoading, setIsThemeInsightLoading] = useState(false);
+  const [themeInsightError, setThemeInsightError] = useState('');
 
   useEffect(() => {
     if (params.query) {
@@ -85,9 +89,36 @@ export default function SearchRoute() {
     }
   }, [activeSearchCourse, params.course]);
 
+  const appliedQuery = (params.query ?? activeSearchQuery ?? '').trim();
+  const appliedCourse = (params.course ?? activeSearchCourse ?? 'todos').trim() || 'todos';
+
+  const appliedCourseLabel = useMemo(() => {
+    if (appliedCourse === 'todos') {
+      return '';
+    }
+
+    return courseCatalog.find((course) => course.id === appliedCourse)?.label || appliedCourse;
+  }, [appliedCourse, courseCatalog]);
+
+  const appliedCourseKnowledge = useMemo(() => {
+    const normalizedLabel = appliedCourseLabel.toLowerCase();
+
+    return (
+      courseKnowledge.find(
+        (item) =>
+          item.courseId === appliedCourse ||
+          item.courseLabel.toLowerCase() === normalizedLabel
+      ) ?? null
+    );
+  }, [appliedCourse, appliedCourseLabel, courseKnowledge]);
+
+  const hasPendingSearch =
+    normalizeSearchTerm(query) !== normalizeSearchTerm(appliedQuery) ||
+    normalizeSearchTerm(selectedCourse) !== normalizeSearchTerm(appliedCourse);
+
   const filteredArticles = useMemo(() => {
-    const normalizedQuery = normalizeSearchTerm(query);
-    const normalizedSelectedCourse = normalizeSearchTerm(selectedCourse);
+    const normalizedQuery = normalizeSearchTerm(appliedQuery);
+    const normalizedSelectedCourse = normalizeSearchTerm(appliedCourse);
 
     const courseFiltered = articles.filter((article) =>
       normalizedSelectedCourse === 'todos'
@@ -113,15 +144,13 @@ export default function SearchRoute() {
 
       return normalizeSearchTerm(content).includes(normalizedQuery);
     });
-  }, [query, selectedCourse]);
+  }, [appliedCourse, appliedQuery]);
 
   const relatedCourseLabel = useMemo(() => {
-    const normalizedQuery = normalizeSearchTerm(query);
+    const normalizedQuery = normalizeSearchTerm(appliedQuery);
 
     if (!normalizedQuery) {
-      return selectedCourse === 'todos'
-        ? ''
-        : courseCatalog.find((course) => course.id === selectedCourse)?.label || selectedCourse;
+      return appliedCourseLabel;
     }
 
     const directCourseMatch = courseCatalog.find((course) => {
@@ -156,11 +185,11 @@ export default function SearchRoute() {
       ).includes(normalizedQuery)
     );
 
-    return matchingBook?.course ?? '';
-  }, [courseCatalog, filteredArticles, query, selectedCourse]);
+    return matchingBook?.course ?? appliedCourseLabel;
+  }, [appliedCourseLabel, appliedQuery, courseCatalog, filteredArticles]);
 
   const relatedResources = useMemo(() => {
-    const normalizedQuery = normalizeSearchTerm(query);
+    const normalizedQuery = normalizeSearchTerm(appliedQuery);
     const normalizedRelatedCourse = normalizeSearchTerm(relatedCourseLabel);
 
     return resourceModules.filter((resource) => {
@@ -178,10 +207,10 @@ export default function SearchRoute() {
           ['videoaulas', 'metodos-estudo', 'simulados'].includes(resource.id))
       );
     });
-  }, [query, relatedCourseLabel]);
+  }, [appliedQuery, relatedCourseLabel]);
 
   const relatedVideos = useMemo(() => {
-    const normalizedQuery = normalizeSearchTerm(query);
+    const normalizedQuery = normalizeSearchTerm(appliedQuery);
     const normalizedRelatedCourse = normalizeSearchTerm(relatedCourseLabel);
 
     return videoLessons.filter((lesson) => {
@@ -190,18 +219,22 @@ export default function SearchRoute() {
       );
 
       if (!normalizedQuery) {
-        return !normalizedRelatedCourse || normalizeSearchTerm(lesson.course) === normalizedRelatedCourse;
+        return (
+          !normalizedRelatedCourse ||
+          normalizeSearchTerm(lesson.course) === normalizedRelatedCourse
+        );
       }
 
       return (
         content.includes(normalizedQuery) ||
-        (normalizedRelatedCourse && normalizeSearchTerm(lesson.course) === normalizedRelatedCourse)
+        (normalizedRelatedCourse &&
+          normalizeSearchTerm(lesson.course) === normalizedRelatedCourse)
       );
     });
-  }, [query, relatedCourseLabel]);
+  }, [appliedQuery, relatedCourseLabel]);
 
   const relatedBooks = useMemo(() => {
-    const normalizedQuery = normalizeSearchTerm(query);
+    const normalizedQuery = normalizeSearchTerm(appliedQuery);
     const normalizedRelatedCourse = normalizeSearchTerm(relatedCourseLabel);
 
     return bookSuggestions.filter((book) => {
@@ -210,7 +243,10 @@ export default function SearchRoute() {
       );
 
       if (!normalizedQuery) {
-        return !normalizedRelatedCourse || normalizeSearchTerm(book.course) === normalizedRelatedCourse;
+        return (
+          !normalizedRelatedCourse ||
+          normalizeSearchTerm(book.course) === normalizedRelatedCourse
+        );
       }
 
       return (
@@ -218,10 +254,65 @@ export default function SearchRoute() {
         (normalizedRelatedCourse && normalizeSearchTerm(book.course) === normalizedRelatedCourse)
       );
     });
-  }, [query, relatedCourseLabel]);
+  }, [appliedQuery, relatedCourseLabel]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadThemeInsight() {
+      if (!appliedQuery) {
+        if (isMounted) {
+          setThemeInsight(null);
+          setThemeInsightError('');
+          setIsThemeInsightLoading(false);
+        }
+        return;
+      }
+
+      setIsThemeInsightLoading(true);
+      setThemeInsightError('');
+
+      try {
+        const response = await requestDeepSearch({
+          theme: appliedQuery,
+          course: relatedCourseLabel || appliedCourseLabel || undefined,
+          courseOverview: appliedCourseKnowledge?.overview,
+          focusAreas: appliedCourseKnowledge?.focusAreas,
+          relatedTerms: appliedCourseKnowledge?.relatedTerms,
+        });
+
+        if (!isMounted) {
+          return;
+        }
+
+        setThemeInsight(response);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setThemeInsight(null);
+        setThemeInsightError(
+          error instanceof Error
+            ? error.message
+            : 'Nao foi possivel analisar o tema com apoio da IA.'
+        );
+      } finally {
+        if (isMounted) {
+          setIsThemeInsightLoading(false);
+        }
+      }
+    }
+
+    void loadThemeInsight();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [appliedCourseKnowledge, appliedCourseLabel, appliedQuery, relatedCourseLabel]);
 
   const unifiedResults = useMemo(() => {
-    const queryText = query.trim();
+    const queryText = appliedQuery.trim();
 
     if (!queryText) {
       return [] as UnifiedSearchResult[];
@@ -430,12 +521,7 @@ export default function SearchRoute() {
     }
 
     for (const material of studyMaterials) {
-      const score = scoreContent(
-        queryText,
-        material.title,
-        material.kind,
-        material.mimeType
-      );
+      const score = scoreContent(queryText, material.title, material.kind, material.mimeType);
 
       if (score > 0) {
         results.push({
@@ -463,10 +549,10 @@ export default function SearchRoute() {
 
     return results.sort((a, b) => b.score - a.score).slice(0, 12);
   }, [
+    appliedQuery,
     courseKnowledge,
     customSummaries,
     filteredArticles,
-    query,
     relatedBooks,
     relatedResources,
     relatedVideos,
@@ -476,11 +562,16 @@ export default function SearchRoute() {
   return (
     <ScreenLayout>
       <SearchScreen
+        appliedQuery={appliedQuery}
         filteredArticles={filteredArticles}
+        hasPendingSearch={hasPendingSearch}
+        isThemeInsightLoading={isThemeInsightLoading}
         relatedBooks={relatedBooks}
         relatedCourseLabel={relatedCourseLabel}
         relatedResources={relatedResources}
         relatedVideos={relatedVideos}
+        themeInsight={themeInsight}
+        themeInsightError={themeInsightError}
         unifiedResults={unifiedResults}
         query={query}
         setQuery={setQuery}

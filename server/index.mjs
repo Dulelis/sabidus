@@ -16,6 +16,40 @@ const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${
 app.use(cors());
 app.use(express.json());
 
+function parseModelJson(outputText, contextLabel) {
+  const trimmedOutput = outputText.trim();
+  const withoutFence = trimmedOutput
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  try {
+    return JSON.parse(withoutFence);
+  } catch {
+    const firstBrace = withoutFence.indexOf('{');
+    const lastBrace = withoutFence.lastIndexOf('}');
+
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+      throw new Error(`${contextLabel} returned invalid JSON`);
+    }
+
+    return JSON.parse(withoutFence.slice(firstBrace, lastBrace + 1));
+  }
+}
+
+function normalizeStringList(value, limit = 10) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 function getApiKey() {
   if (!geminiApiKey) {
     throw new Error('GEMINI_API_KEY not configured');
@@ -136,7 +170,7 @@ app.post('/api/explain', async (req, res) => {
     const { subject = '', question = '' } = req.body ?? {};
     const prompt = `Voce e um tutor academico. Responda em JSON valido com a chave "tips" contendo um array de exatamente 3 strings curtas em portugues do Brasil. Materia: ${subject}. Duvida: ${question}.`;
     const output = await runJsonPrompt(prompt);
-    const parsed = JSON.parse(output);
+    const parsed = parseModelJson(output, 'Explain route');
     res.json(parsed);
   } catch (error) {
     res.status(500).json({
@@ -151,7 +185,7 @@ app.post('/api/review', async (req, res) => {
     const { text = '' } = req.body ?? {};
     const prompt = `Voce e um revisor de escrita academica. Analise o texto abaixo e responda em JSON valido com as chaves "issues" (array de strings), "revisedPreview" (string) e "plagiarismNote" (string). Texto: ${text}`;
     const output = await runJsonPrompt(prompt);
-    const parsed = JSON.parse(output);
+    const parsed = parseModelJson(output, 'Review route');
     res.json(parsed);
   } catch (error) {
     res.status(500).json({
@@ -172,7 +206,7 @@ app.post('/api/study-plan', async (req, res) => {
 
     const prompt = `Voce e um planejador de estudos. Responda em JSON valido com a chave "items", contendo um array de objetos com "day" e "plan". Gere um cronograma em portugues do Brasil com base em: dias disponiveis ${availableDays}, horas por dia ${hoursPerDay}, metodo ${method}, objetivo ${objective}.`;
     const output = await runJsonPrompt(prompt);
-    const parsed = JSON.parse(output);
+    const parsed = parseModelJson(output, 'Study plan route');
     res.json(parsed);
   } catch (error) {
     res.status(500).json({
@@ -184,8 +218,18 @@ app.post('/api/study-plan', async (req, res) => {
 
 app.post('/api/deep-search', async (req, res) => {
   try {
-    const { theme = '' } = req.body ?? {};
+    const {
+      theme = '',
+      course = '',
+      courseOverview = '',
+      focusAreas = [],
+      relatedTerms = [],
+    } = req.body ?? {};
     const normalizedTheme = theme.trim();
+    const normalizedCourse = course.trim();
+    const normalizedCourseOverview = courseOverview.trim();
+    const normalizedFocusAreas = normalizeStringList(focusAreas, 6);
+    const normalizedRelatedTerms = normalizeStringList(relatedTerms, 8);
 
     if (!normalizedTheme) {
       res.status(400).json({
@@ -195,9 +239,34 @@ app.post('/api/deep-search', async (req, res) => {
       return;
     }
 
-    const prompt = `Voce e um orientador de estudos que faz pesquisa aprofundada na web. Responda em JSON valido com as chaves: "summary" (string em portugues do Brasil), "tips" (array com 5 dicas praticas), "nextSteps" (array com 3 proximos passos curtos). Tema de estudo: ${normalizedTheme}.`;
+    const prompt = `
+Voce e um orientador academico que trabalha dentro de um app de estudos. Use busca na web para montar uma resposta util e objetiva para o aluno.
+
+Responda em JSON valido com estas chaves:
+- "summary": string curta em portugues do Brasil explicando o tema
+- "whyItMatters": string curta explicando por que esse tema importa para o estudo
+- "keyTopics": array com exatamente 5 topicos-chave
+- "practicalApplications": array com exatamente 3 aplicacoes praticas
+- "tips": array com exatamente 5 dicas praticas
+- "nextSteps": array com exatamente 3 proximos passos curtos
+- "studyQuestions": array com exatamente 4 perguntas de estudo
+- "queryIdeas": array com exatamente 4 consultas de busca mais especificas
+
+Regras:
+- Seja especifico e direto.
+- Se houver curso informado, adapte o recorte para esse curso.
+- Se o tema for amplo, escolha o recorte inicial mais util para o aluno e deixe isso claro.
+- Nao invente links no JSON.
+
+Tema de estudo: ${normalizedTheme}
+Curso relacionado: ${normalizedCourse || 'nao informado'}
+Contexto do curso: ${normalizedCourseOverview || 'nao informado'}
+Areas de foco do curso: ${normalizedFocusAreas.join('; ') || 'nao informado'}
+Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao informado'}
+`;
+
     const { outputText, groundingMetadata } = await runGroundedJsonPrompt(prompt);
-    const parsed = JSON.parse(outputText);
+    const parsed = parseModelJson(outputText, 'Deep search route');
 
     const chunks = Array.isArray(groundingMetadata?.groundingChunks)
       ? groundingMetadata.groundingChunks
@@ -223,14 +292,22 @@ app.post('/api/deep-search', async (req, res) => {
     const videoSources = uniqueSources.filter((source) =>
       /youtube|youtu\.be|vimeo|video/i.test(source.url)
     );
+    const groundedQueries = normalizeStringList(groundingMetadata?.webSearchQueries, 6);
+    const promptQueries = normalizeStringList(parsed.queryIdeas, 6);
+    const mergedQueries = Array.from(new Set([...promptQueries, ...groundedQueries])).slice(0, 8);
 
     res.json({
-      summary: typeof parsed.summary === 'string' ? parsed.summary : '',
-      tips: Array.isArray(parsed.tips) ? parsed.tips : [],
-      nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [],
-      webSearchQueries: Array.isArray(groundingMetadata?.webSearchQueries)
-        ? groundingMetadata.webSearchQueries
-        : [],
+      theme: normalizedTheme,
+      course: normalizedCourse,
+      summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
+      whyItMatters:
+        typeof parsed.whyItMatters === 'string' ? parsed.whyItMatters.trim() : '',
+      keyTopics: normalizeStringList(parsed.keyTopics, 5),
+      practicalApplications: normalizeStringList(parsed.practicalApplications, 3),
+      tips: normalizeStringList(parsed.tips, 5),
+      nextSteps: normalizeStringList(parsed.nextSteps, 3),
+      studyQuestions: normalizeStringList(parsed.studyQuestions, 4),
+      webSearchQueries: mergedQueries,
       sources: uniqueSources.slice(0, 10),
       videos: videoSources.slice(0, 6),
     });

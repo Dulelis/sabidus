@@ -50,12 +50,22 @@ type StudyPlanRequest = {
 
 type DeepSearchRequest = {
   theme: string;
+  course?: string;
+  courseOverview?: string;
+  focusAreas?: string[];
+  relatedTerms?: string[];
 };
 
 export type DeepSearchResponse = {
+  theme: string;
+  course: string;
   summary: string;
+  whyItMatters: string;
+  keyTopics: string[];
+  practicalApplications: string[];
   tips: string[];
   nextSteps: string[];
+  studyQuestions: string[];
   webSearchQueries: string[];
   sources: Array<{
     title: string;

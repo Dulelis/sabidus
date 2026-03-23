@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { Linking, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
+import { useStudy } from '../context/StudyContext';
 import { researchSources } from '../data/mockData';
+import type { DeepSearchResponse } from '../lib/apiClient';
 import { styles } from '../styles/appStyles';
 import type {
   Article,
@@ -11,14 +13,18 @@ import type {
   UnifiedSearchResult,
   VideoLesson,
 } from '../types/app';
-import { useStudy } from '../context/StudyContext';
 
 type SearchScreenProps = {
+  appliedQuery: string;
   filteredArticles: Article[];
+  hasPendingSearch: boolean;
+  isThemeInsightLoading: boolean;
   relatedBooks: BookSuggestion[];
   relatedCourseLabel: string;
   relatedResources: ResourceModule[];
   relatedVideos: VideoLesson[];
+  themeInsight: DeepSearchResponse | null;
+  themeInsightError: string;
   unifiedResults: UnifiedSearchResult[];
   query: string;
   setQuery: (value: string) => void;
@@ -27,11 +33,16 @@ type SearchScreenProps = {
 };
 
 export function SearchScreen({
+  appliedQuery,
   filteredArticles,
+  hasPendingSearch,
+  isThemeInsightLoading,
   relatedBooks,
   relatedCourseLabel,
   relatedResources,
   relatedVideos,
+  themeInsight,
+  themeInsightError,
   unifiedResults,
   query,
   setQuery,
@@ -142,7 +153,12 @@ export function SearchScreen({
       course: selectedCourse,
     });
 
-    const targetPath = `/pesquisa-profunda?theme=${encodeURIComponent(normalizedQuery)}`;
+    const selectedCourseForSearch = selectedCourseLabel || relatedCourseLabel;
+    const targetPath = selectedCourseForSearch
+      ? `/pesquisa-profunda?theme=${encodeURIComponent(normalizedQuery)}&course=${encodeURIComponent(
+          selectedCourseForSearch
+        )}`
+      : `/pesquisa-profunda?theme=${encodeURIComponent(normalizedQuery)}`;
 
     if (typeof window !== 'undefined') {
       window.open(targetPath, '_blank', 'noopener,noreferrer');
@@ -151,7 +167,9 @@ export function SearchScreen({
 
     router.push({
       pathname: '/pesquisa-profunda',
-      params: { theme: normalizedQuery },
+      params: selectedCourseForSearch
+        ? { theme: normalizedQuery, course: selectedCourseForSearch }
+        : { theme: normalizedQuery },
     });
   }
 
@@ -206,37 +224,126 @@ export function SearchScreen({
         />
       </View>
 
-      <TouchableOpacity
-        style={styles.secondaryButton}
-        onPress={handleSaveSearch}
-      >
+      <TouchableOpacity style={styles.secondaryButton} onPress={handleSaveSearch}>
         <Text style={styles.secondaryButtonText}>Salvar busca atual</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.searchButton}
-        onPress={handleApplySearch}
-      >
+      <TouchableOpacity style={styles.searchButton} onPress={handleApplySearch}>
         <Text style={styles.searchButtonText}>Abrir tema pesquisado</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.secondaryButton}
-        onPress={handleOpenDeepSearch}
-      >
+      <TouchableOpacity style={styles.secondaryButton} onPress={handleOpenDeepSearch}>
         <Text style={styles.secondaryButtonText}>Aprofundar na internet</Text>
       </TouchableOpacity>
 
-      {query.trim() ? (
-        <View style={styles.detailHero}>
-          <Text style={styles.articleCategory}>Tema pesquisado</Text>
-          <Text style={styles.detailTitle}>{query}</Text>
-          <Text style={styles.detailDescription}>
-            {relatedCourseLabel
-              ? `Curso relacionado: ${relatedCourseLabel}. Explore abaixo os materiais e atalhos montados para este tema.`
-              : 'Explore abaixo os materiais e atalhos montados para este tema.'}
+      {hasPendingSearch ? (
+        <View style={styles.detailBodyCard}>
+          <Text style={styles.sectionTitle}>Busca pronta para aplicar</Text>
+          <Text style={styles.detailBodyText}>
+            O texto digitado ainda nao virou tema ativo. Toque em Abrir tema pesquisado para
+            puxar a analise do app e as referencias da web.
           </Text>
         </View>
+      ) : null}
+
+      {appliedQuery ? (
+        <View style={styles.detailHero}>
+          <Text style={styles.articleCategory}>Tema pesquisado</Text>
+          <Text style={styles.detailTitle}>{appliedQuery}</Text>
+          <Text style={styles.detailDescription}>
+            {relatedCourseLabel
+              ? `Curso relacionado: ${relatedCourseLabel}. Abaixo voce ve uma leitura inicial feita por IA, fontes da web e materiais internos do app.`
+              : 'Abaixo voce ve uma leitura inicial feita por IA, fontes da web e materiais internos do app.'}
+          </Text>
+        </View>
+      ) : null}
+
+      {appliedQuery && isThemeInsightLoading ? (
+        <View style={styles.detailBodyCard}>
+          <Text style={styles.sectionTitle}>Analisando tema com IA</Text>
+          <Text style={styles.detailBodyText}>
+            Estou cruzando o tema com o curso selecionado e buscando referencias na web para
+            entregar um panorama mais util.
+          </Text>
+        </View>
+      ) : null}
+
+      {appliedQuery && !isThemeInsightLoading && themeInsightError ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>Analise temporariamente indisponivel</Text>
+          <Text style={styles.emptyText}>{themeInsightError}</Text>
+        </View>
+      ) : null}
+
+      {appliedQuery && !isThemeInsightLoading && themeInsight ? (
+        <>
+          <View style={styles.detailBodyCard}>
+            <Text style={styles.sectionTitle}>Panorama inicial</Text>
+            <Text style={styles.detailBodyText}>{themeInsight.summary}</Text>
+            {themeInsight.whyItMatters ? (
+              <Text style={styles.detailBodyText}>{themeInsight.whyItMatters}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.helperCard}>
+            <Text style={styles.sectionTitle}>Topicos-chave do tema</Text>
+            {themeInsight.keyTopics.map((topic) => (
+              <Text key={topic} style={styles.helperBullet}>
+                - {topic}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.helperCard}>
+            <Text style={styles.sectionTitle}>Aplicacoes praticas</Text>
+            {themeInsight.practicalApplications.map((item) => (
+              <Text key={item} style={styles.helperBullet}>
+                - {item}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Perguntas para orientar o estudo</Text>
+            {themeInsight.studyQuestions.map((questionItem) => (
+              <View key={questionItem} style={styles.toolItem}>
+                <Text style={styles.toolText}>{questionItem}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Consultas sugeridas na web</Text>
+            {themeInsight.webSearchQueries.map((item) => (
+              <View key={item} style={styles.toolItem}>
+                <Text style={styles.toolText}>{item}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Fontes iniciais da web</Text>
+            {themeInsight.sources.length > 0 ? (
+              themeInsight.sources.slice(0, 4).map((source) => (
+                <TouchableOpacity
+                  key={source.url}
+                  style={styles.sourceItem}
+                  onPress={() => Linking.openURL(source.url)}
+                >
+                  <Text style={styles.sourceName}>{source.title}</Text>
+                  <Text style={styles.sourceType}>{source.url}</Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>Nenhuma fonte listada agora</Text>
+                <Text style={styles.emptyText}>
+                  Abra a pesquisa aprofundada para tentar um novo recorte ou variar os termos.
+                </Text>
+              </View>
+            )}
+          </View>
+        </>
       ) : null}
 
       <TextInput
@@ -299,7 +406,7 @@ export function SearchScreen({
         </View>
       ) : null}
 
-      {query.trim() ? (
+      {appliedQuery ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Tudo relacionado ao tema</Text>
           {unifiedResults.map((result) => (
@@ -325,7 +432,7 @@ export function SearchScreen({
         </View>
       ) : null}
 
-      {query.trim() ? (
+      {appliedQuery ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Explorar neste tema</Text>
           {relatedCourseLabel ? (

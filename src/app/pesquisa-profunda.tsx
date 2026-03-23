@@ -7,7 +7,10 @@ import { requestDeepSearch, type DeepSearchResponse } from '@/lib/apiClient';
 import { styles } from '@/styles/appStyles';
 
 export default function DeepSearchRoute() {
-  const { theme = '' } = useLocalSearchParams<{ theme?: string }>();
+  const { theme = '', course = '' } = useLocalSearchParams<{
+    theme?: string;
+    course?: string;
+  }>();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<DeepSearchResponse | null>(null);
@@ -17,6 +20,7 @@ export default function DeepSearchRoute() {
 
     async function loadDeepSearch() {
       const normalizedTheme = theme.trim();
+      const normalizedCourse = course.trim();
 
       if (!normalizedTheme) {
         if (isMounted) {
@@ -30,7 +34,10 @@ export default function DeepSearchRoute() {
       setErrorMessage('');
 
       try {
-        const response = await requestDeepSearch({ theme: normalizedTheme });
+        const response = await requestDeepSearch({
+          theme: normalizedTheme,
+          course: normalizedCourse || undefined,
+        });
 
         if (!isMounted) {
           return;
@@ -59,7 +66,7 @@ export default function DeepSearchRoute() {
     return () => {
       isMounted = false;
     };
-  }, [theme]);
+  }, [course, theme]);
 
   return (
     <ScreenLayout>
@@ -71,7 +78,9 @@ export default function DeepSearchRoute() {
         <Text style={styles.articleCategory}>Pesquisa aprofundada</Text>
         <Text style={styles.detailTitle}>{theme || 'Tema sem definicao'}</Text>
         <Text style={styles.detailDescription}>
-          Links, dicas, videos e pistas de aprofundamento buscados na internet.
+          {course
+            ? `Recorte orientado para ${course}, com links, perguntas e pistas de aprofundamento buscados na internet.`
+            : 'Links, perguntas, videos e pistas de aprofundamento buscados na internet.'}
         </Text>
       </View>
 
@@ -96,6 +105,27 @@ export default function DeepSearchRoute() {
           <View style={styles.detailBodyCard}>
             <Text style={styles.sectionTitle}>Resumo web</Text>
             <Text style={styles.detailBodyText}>{result.summary}</Text>
+            {result.whyItMatters ? (
+              <Text style={styles.detailBodyText}>{result.whyItMatters}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.helperCard}>
+            <Text style={styles.sectionTitle}>Topicos-chave</Text>
+            {result.keyTopics.map((topic) => (
+              <Text key={topic} style={styles.helperBullet}>
+                - {topic}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.helperCard}>
+            <Text style={styles.sectionTitle}>Aplicacoes praticas</Text>
+            {result.practicalApplications.map((item) => (
+              <Text key={item} style={styles.helperBullet}>
+                - {item}
+              </Text>
+            ))}
           </View>
 
           <View style={styles.helperCard}>
@@ -112,6 +142,15 @@ export default function DeepSearchRoute() {
             {result.nextSteps.map((step) => (
               <View key={step} style={styles.articleCard}>
                 <Text style={styles.articleDescription}>{step}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Perguntas para guiar a pesquisa</Text>
+            {result.studyQuestions.map((questionItem) => (
+              <View key={questionItem} style={styles.toolItem}>
+                <Text style={styles.toolText}>{questionItem}</Text>
               </View>
             ))}
           </View>

@@ -1,19 +1,37 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Linking, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Text, TouchableOpacity, View } from 'react-native';
 
 import { ScreenLayout } from '@/components/ScreenLayout';
+import { useStudy } from '@/context/StudyContext';
 import { requestDeepSearch, type DeepSearchResponse } from '@/lib/apiClient';
+import {
+  getDiscoveryProfile,
+  parseDiscoveryFilters,
+} from '@/lib/discoveryProfiles';
+import {
+  buildMaterialLabelFromLink,
+  inferMaterialKindFromUrl,
+  normalizeMaterialUrlInput,
+  openStudyMaterialUrl,
+} from '@/lib/studyMaterials';
 import { styles } from '@/styles/appStyles';
+import type { StudyMaterial } from '@/types/app';
 
 export default function DeepSearchRoute() {
-  const { theme = '', course = '' } = useLocalSearchParams<{
+  const { theme = '', course = '', mode = 'general', filters } = useLocalSearchParams<{
     theme?: string;
     course?: string;
+    mode?: string;
+    filters?: string | string[];
   }>();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<DeepSearchResponse | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const { addStudyMaterial } = useStudy();
+  const discoveryProfile = getDiscoveryProfile(mode);
+  const selectedFilters = useMemo(() => parseDiscoveryFilters(filters), [filters]);
 
   useEffect(() => {
     let isMounted = true;
@@ -37,6 +55,8 @@ export default function DeepSearchRoute() {
         const response = await requestDeepSearch({
           theme: normalizedTheme,
           course: normalizedCourse || undefined,
+          mode,
+          filters: selectedFilters,
         });
 
         if (!isMounted) {
@@ -66,7 +86,30 @@ export default function DeepSearchRoute() {
     return () => {
       isMounted = false;
     };
-  }, [course, theme]);
+  }, [course, filters, mode, selectedFilters, theme]);
+
+  function handleSaveExternalMaterial(item: {
+    kind?: StudyMaterial['kind'];
+    title: string;
+    url: string;
+  }) {
+    const normalizedUrl = normalizeMaterialUrlInput(item.url);
+    const resolvedKind = item.kind || inferMaterialKindFromUrl(normalizedUrl);
+    const createdMaterial = addStudyMaterial({
+      title: item.title.trim() || buildMaterialLabelFromLink(normalizedUrl),
+      kind: resolvedKind,
+      url: normalizedUrl,
+      mimeType: resolvedKind === 'arquivo-externo' ? 'application/octet-stream' : 'text/html',
+      storageMode: 'persisted',
+    });
+
+    if (!createdMaterial) {
+      setFeedbackMessage('Esse material ja esta salvo ou o link informado esta incompleto.');
+      return;
+    }
+
+    setFeedbackMessage(`Material "${createdMaterial.title}" salvo na biblioteca do app.`);
+  }
 
   return (
     <ScreenLayout>
@@ -75,14 +118,34 @@ export default function DeepSearchRoute() {
       </TouchableOpacity>
 
       <View style={styles.detailHero}>
-        <Text style={styles.articleCategory}>Pesquisa aprofundada</Text>
+        <Text style={styles.articleCategory}>{discoveryProfile.label}</Text>
         <Text style={styles.detailTitle}>{theme || 'Tema sem definicao'}</Text>
         <Text style={styles.detailDescription}>
           {course
-            ? `Recorte orientado para ${course}, com links, perguntas e pistas de aprofundamento buscados na internet.`
-            : 'Links, perguntas, videos e pistas de aprofundamento buscados na internet.'}
+            ? `Recorte orientado para ${course}. ${discoveryProfile.summary}`
+            : discoveryProfile.summary}
         </Text>
+        {selectedFilters.length > 0 ? (
+          <View style={styles.chipRow}>
+            {selectedFilters.map((filterId: string) => {
+              const filterLabel =
+                discoveryProfile.filters.find((item) => item.id === filterId)?.label || filterId;
+
+              return (
+                <View key={filterId} style={styles.articleMetaPill}>
+                  <Text style={styles.articleMetaText}>{filterLabel}</Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
+
+      {feedbackMessage ? (
+        <View style={styles.savedSummaryCard}>
+          <Text style={styles.savedSummaryText}>{feedbackMessage}</Text>
+        </View>
+      ) : null}
 
       {isLoading ? (
         <View style={styles.detailBodyCard}>
@@ -156,31 +219,78 @@ export default function DeepSearchRoute() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Links encontrados</Text>
+            <Text style={styles.sectionTitle}>{discoveryProfile.sourcesTitle}</Text>
             {result.sources.map((source) => (
-              <TouchableOpacity
-                key={source.url}
-                style={styles.sourceItem}
-                onPress={() => Linking.openURL(source.url)}
-              >
+              <View key={source.url} style={styles.sourceItem}>
                 <Text style={styles.sourceName}>{source.title}</Text>
                 <Text style={styles.sourceType}>{source.url}</Text>
-              </TouchableOpacity>
+                <View style={styles.itemActionRow}>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, styles.compactControlButton]}
+                    onPress={() => {
+                      void openStudyMaterialUrl(source.url).catch((error) => {
+                        setFeedbackMessage(
+                          error instanceof Error
+                            ? error.message
+                            : 'Nao foi possivel abrir esse link agora.'
+                        );
+                      });
+                    }}
+                  >
+                    <Text style={styles.secondaryButtonText}>Abrir</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.searchButton, styles.compactControlButton]}
+                    onPress={() =>
+                      handleSaveExternalMaterial({
+                        title: source.title,
+                        url: source.url,
+                      })
+                    }
+                  >
+                    <Text style={styles.searchButtonText}>Gravar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             ))}
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Videos relacionados</Text>
+            <Text style={styles.sectionTitle}>{discoveryProfile.videosTitle}</Text>
             {result.videos.length > 0 ? (
               result.videos.map((video) => (
-                <TouchableOpacity
-                  key={video.url}
-                  style={styles.sourceItem}
-                  onPress={() => Linking.openURL(video.url)}
-                >
+                <View key={video.url} style={styles.sourceItem}>
                   <Text style={styles.sourceName}>{video.title}</Text>
                   <Text style={styles.sourceType}>{video.url}</Text>
-                </TouchableOpacity>
+                  <View style={styles.itemActionRow}>
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, styles.compactControlButton]}
+                      onPress={() => {
+                        void openStudyMaterialUrl(video.url).catch((error) => {
+                          setFeedbackMessage(
+                            error instanceof Error
+                              ? error.message
+                              : 'Nao foi possivel abrir esse video agora.'
+                          );
+                        });
+                      }}
+                    >
+                      <Text style={styles.secondaryButtonText}>Abrir</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.searchButton, styles.compactControlButton]}
+                      onPress={() =>
+                        handleSaveExternalMaterial({
+                          kind: 'link',
+                          title: video.title,
+                          url: video.url,
+                        })
+                      }
+                    >
+                      <Text style={styles.searchButtonText}>Gravar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               ))
             ) : (
               <View style={styles.emptyState}>

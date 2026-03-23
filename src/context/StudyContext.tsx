@@ -20,6 +20,7 @@ import type {
   AssessmentItem,
   CourseKnowledge,
   CourseOption,
+  DiscoveryMode,
   PerformanceEntry,
   StudyMaterial,
   SummaryNote,
@@ -52,6 +53,8 @@ type PersistedStudyState = {
   desiredCourse: string;
   activeSearchQuery: string;
   activeSearchCourse: string;
+  activeSearchMode: DiscoveryMode;
+  activeSearchFilters: string[];
   courseCatalog: CourseOption[];
   courseKnowledge: CourseKnowledge[];
   studyMaterials: StudyMaterial[];
@@ -109,10 +112,25 @@ type StudyContextValue = {
     mimeType?: string;
     storageMode?: StudyMaterial['storageMode'];
   }) => StudyMaterial | null;
+  updateStudyMaterial: (item: {
+    id: string;
+    title: string;
+    kind: StudyMaterial['kind'];
+    url: string;
+    mimeType?: string;
+    storageMode?: StudyMaterial['storageMode'];
+  }) => 'updated' | 'duplicate' | 'invalid';
   deleteStudyMaterial: (id: string) => boolean;
   activeSearchQuery: string;
   activeSearchCourse: string;
-  openSearchTheme: (item: { query: string; course?: string }) => void;
+  activeSearchMode: DiscoveryMode;
+  activeSearchFilters: string[];
+  openSearchTheme: (item: {
+    query: string;
+    course?: string;
+    mode?: DiscoveryMode;
+    filters?: string[];
+  }) => void;
   isHydrated: boolean;
 };
 
@@ -193,6 +211,8 @@ export function StudyProvider({ children }: PropsWithChildren) {
   const [studyMaterials, setStudyMaterials] = useState<StudyMaterial[]>([]);
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [activeSearchCourse, setActiveSearchCourse] = useState('todos');
+  const [activeSearchMode, setActiveSearchMode] = useState<DiscoveryMode>('general');
+  const [activeSearchFilters, setActiveSearchFilters] = useState<string[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -243,6 +263,14 @@ export function StudyProvider({ children }: PropsWithChildren) {
           setActiveSearchCourse(parsed.activeSearchCourse);
         }
 
+        if (typeof parsed.activeSearchMode === 'string') {
+          setActiveSearchMode(parsed.activeSearchMode as DiscoveryMode);
+        }
+
+        if (Array.isArray(parsed.activeSearchFilters)) {
+          setActiveSearchFilters(dedupeStrings(parsed.activeSearchFilters));
+        }
+
         if (Array.isArray(parsed.courseCatalog)) {
           setCourseCatalog(dedupeCourses(parsed.courseCatalog));
         }
@@ -279,6 +307,8 @@ export function StudyProvider({ children }: PropsWithChildren) {
       desiredCourse,
       activeSearchQuery,
       activeSearchCourse,
+      activeSearchMode,
+      activeSearchFilters: dedupeStrings(activeSearchFilters),
       courseCatalog: dedupeCourses(courseCatalog),
       courseKnowledge: dedupeCourseKnowledge(courseKnowledge),
       studyMaterials: dedupeStudyMaterials(
@@ -297,6 +327,8 @@ export function StudyProvider({ children }: PropsWithChildren) {
     courseKnowledge,
     studyMaterials,
     activeSearchCourse,
+    activeSearchFilters,
+    activeSearchMode,
     activeSearchQuery,
     isHydrated,
     recentSearches,
@@ -542,6 +574,57 @@ export function StudyProvider({ children }: PropsWithChildren) {
     return createdMaterial;
   }
 
+  function updateStudyMaterial(item: {
+    id: string;
+    title: string;
+    kind: StudyMaterial['kind'];
+    url: string;
+    mimeType?: string;
+    storageMode?: StudyMaterial['storageMode'];
+  }) {
+    const normalizedId = item.id.trim();
+    const normalizedTitle = item.title.trim();
+    const normalizedUrl = item.url.trim();
+
+    if (!normalizedId || !normalizedTitle || !normalizedUrl) {
+      return 'invalid';
+    }
+
+    const currentMaterial = studyMaterials.find((material) => material.id === normalizedId);
+
+    if (!currentMaterial) {
+      return 'invalid';
+    }
+
+    const duplicateExists = studyMaterials.some(
+      (material) =>
+        material.id !== normalizedId &&
+        material.kind === item.kind &&
+        material.url.toLowerCase() === normalizedUrl.toLowerCase()
+    );
+
+    if (duplicateExists) {
+      return 'duplicate';
+    }
+
+    setStudyMaterials((current) =>
+      current.map((material) =>
+        material.id === normalizedId
+          ? {
+              ...material,
+              title: normalizedTitle,
+              kind: item.kind,
+              url: normalizedUrl,
+              mimeType: item.mimeType?.trim() || material.mimeType,
+              storageMode: item.storageMode || material.storageMode,
+            }
+          : material
+      )
+    );
+
+    return 'updated';
+  }
+
   function deleteStudyMaterial(id: string) {
     if (!id.trim()) {
       return false;
@@ -676,7 +759,12 @@ export function StudyProvider({ children }: PropsWithChildren) {
     ]);
   }
 
-  function openSearchTheme(item: { query: string; course?: string }) {
+  function openSearchTheme(item: {
+    query: string;
+    course?: string;
+    mode?: DiscoveryMode;
+    filters?: string[];
+  }) {
     const normalizedQuery = item.query.trim();
 
     if (!normalizedQuery) {
@@ -685,6 +773,8 @@ export function StudyProvider({ children }: PropsWithChildren) {
 
     setActiveSearchQuery(normalizedQuery);
     setActiveSearchCourse(item.course?.trim() || 'todos');
+    setActiveSearchMode(item.mode || 'general');
+    setActiveSearchFilters(dedupeStrings(item.filters || []));
     registerSearch(normalizedQuery);
   }
 
@@ -718,9 +808,12 @@ export function StudyProvider({ children }: PropsWithChildren) {
       deleteCourse,
       studyMaterials,
       addStudyMaterial,
+      updateStudyMaterial,
       deleteStudyMaterial,
       activeSearchQuery,
       activeSearchCourse,
+      activeSearchMode,
+      activeSearchFilters,
       openSearchTheme,
       isHydrated,
     }),
@@ -736,12 +829,15 @@ export function StudyProvider({ children }: PropsWithChildren) {
       courseCatalog,
       courseKnowledge,
       studyMaterials,
+      activeSearchFilters,
+      activeSearchMode,
       activeSearchCourse,
       activeSearchQuery,
       isHydrated,
       recentSearches,
       savedArticleIds,
       addStudyMaterial,
+      updateStudyMaterial,
       updateCalendarItem,
       updateTask,
     ]

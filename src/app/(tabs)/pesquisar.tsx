@@ -14,8 +14,12 @@ import {
   videoLessons,
 } from '@/data/mockData';
 import { requestDeepSearch, type DeepSearchResponse } from '@/lib/apiClient';
+import {
+  getDiscoveryProfile,
+  parseDiscoveryFilters,
+} from '@/lib/discoveryProfiles';
 import { SearchScreen } from '@/screens/SearchScreen';
-import type { UnifiedSearchResult } from '@/types/app';
+import type { DiscoveryMode, UnifiedSearchResult } from '@/types/app';
 
 function normalizeSearchTerm(value: string) {
   return value
@@ -49,19 +53,48 @@ function scoreContent(query: string, ...parts: string[]) {
   return score;
 }
 
+function includesCourseContext(value: string, courseLabel: string) {
+  const normalizedValue = normalizeSearchTerm(value);
+  const normalizedCourseLabel = normalizeSearchTerm(courseLabel);
+
+  if (!normalizedValue || !normalizedCourseLabel) {
+    return false;
+  }
+
+  return (
+    normalizedValue.includes(normalizedCourseLabel) ||
+    normalizedCourseLabel.includes(normalizedValue)
+  );
+}
+
 export default function SearchRoute() {
   const {
     activeSearchCourse,
+    activeSearchFilters,
+    activeSearchMode,
     activeSearchQuery,
     courseCatalog,
     courseKnowledge,
     customSummaries,
     studyMaterials,
   } = useStudy();
-  const params = useLocalSearchParams<{ query?: string; course?: string }>();
+  const params = useLocalSearchParams<{
+    query?: string;
+    course?: string;
+    mode?: DiscoveryMode;
+    filters?: string | string[];
+  }>();
   const [query, setQuery] = useState(params.query ?? activeSearchQuery ?? '');
   const [selectedCourse, setSelectedCourse] = useState(
     params.course ?? activeSearchCourse ?? 'todos'
+  );
+  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>(
+    (params.mode as DiscoveryMode) ?? activeSearchMode ?? 'general'
+  );
+  const [selectedFilters, setSelectedFilters] = useState<string[]>(
+    parseDiscoveryFilters(params.filters).length > 0
+      ? parseDiscoveryFilters(params.filters)
+      : activeSearchFilters ?? []
   );
   const [themeInsight, setThemeInsight] = useState<DeepSearchResponse | null>(null);
   const [isThemeInsightLoading, setIsThemeInsightLoading] = useState(false);
@@ -89,8 +122,43 @@ export default function SearchRoute() {
     }
   }, [activeSearchCourse, params.course]);
 
+  useEffect(() => {
+    if (params.mode) {
+      setDiscoveryMode(params.mode as DiscoveryMode);
+      return;
+    }
+
+    setDiscoveryMode(activeSearchMode || 'general');
+  }, [activeSearchMode, params.mode]);
+
+  useEffect(() => {
+    const routeFilters = parseDiscoveryFilters(params.filters);
+
+    if (routeFilters.length > 0) {
+      setSelectedFilters(routeFilters);
+      return;
+    }
+
+    setSelectedFilters(activeSearchFilters ?? []);
+  }, [activeSearchFilters, params.filters]);
+
   const appliedQuery = (params.query ?? activeSearchQuery ?? '').trim();
   const appliedCourse = (params.course ?? activeSearchCourse ?? 'todos').trim() || 'todos';
+  const appliedMode = ((params.mode as DiscoveryMode) ?? activeSearchMode ?? 'general').trim() as DiscoveryMode;
+  const appliedFilters = useMemo(
+    () => parseDiscoveryFilters(params.filters).length > 0
+      ? parseDiscoveryFilters(params.filters)
+      : activeSearchFilters,
+    [activeSearchFilters, params.filters]
+  );
+  const discoveryProfile = useMemo(
+    () => getDiscoveryProfile(discoveryMode),
+    [discoveryMode]
+  );
+  const appliedDiscoveryProfile = useMemo(
+    () => getDiscoveryProfile(appliedMode),
+    [appliedMode]
+  );
 
   const appliedCourseLabel = useMemo(() => {
     if (appliedCourse === 'todos') {
@@ -114,7 +182,9 @@ export default function SearchRoute() {
 
   const hasPendingSearch =
     normalizeSearchTerm(query) !== normalizeSearchTerm(appliedQuery) ||
-    normalizeSearchTerm(selectedCourse) !== normalizeSearchTerm(appliedCourse);
+    normalizeSearchTerm(selectedCourse) !== normalizeSearchTerm(appliedCourse) ||
+    normalizeSearchTerm(discoveryMode) !== normalizeSearchTerm(appliedMode) ||
+    normalizeSearchTerm(selectedFilters.join(',')) !== normalizeSearchTerm(appliedFilters.join(','));
 
   const filteredArticles = useMemo(() => {
     const normalizedQuery = normalizeSearchTerm(appliedQuery);
@@ -276,6 +346,8 @@ export default function SearchRoute() {
         const response = await requestDeepSearch({
           theme: appliedQuery,
           course: relatedCourseLabel || appliedCourseLabel || undefined,
+          mode: appliedMode,
+          filters: appliedFilters,
           courseOverview: appliedCourseKnowledge?.overview,
           focusAreas: appliedCourseKnowledge?.focusAreas,
           relatedTerms: appliedCourseKnowledge?.relatedTerms,
@@ -309,10 +381,23 @@ export default function SearchRoute() {
     return () => {
       isMounted = false;
     };
-  }, [appliedCourseKnowledge, appliedCourseLabel, appliedQuery, relatedCourseLabel]);
+  }, [
+    appliedCourseKnowledge,
+    appliedCourseLabel,
+    appliedFilters,
+    appliedMode,
+    appliedQuery,
+    relatedCourseLabel,
+  ]);
 
   const unifiedResults = useMemo(() => {
     const queryText = appliedQuery.trim();
+    const normalizedQuery = normalizeSearchTerm(queryText);
+    const contextCourseLabel = relatedCourseLabel || appliedCourseLabel;
+    const normalizedContextCourse = normalizeSearchTerm(contextCourseLabel);
+    const supportsExactResources =
+      /matematica|fisica|quimica/.test(normalizedContextCourse) ||
+      /formula|equacao|calculo|molaridade|bhaskara/.test(normalizedQuery);
 
     if (!queryText) {
       return [] as UnifiedSearchResult[];
@@ -321,14 +406,16 @@ export default function SearchRoute() {
     const results: Array<UnifiedSearchResult & { score: number }> = [];
 
     for (const article of filteredArticles) {
-      const score = scoreContent(
-        queryText,
-        article.title,
-        article.category,
-        article.description,
-        article.body,
-        article.course
-      );
+      const score =
+        scoreContent(
+          queryText,
+          article.title,
+          article.category,
+          article.description,
+          article.body,
+          article.course
+        ) +
+        (includesCourseContext(article.course, contextCourseLabel) ? 4 : 0);
 
       if (score > 0) {
         results.push({
@@ -345,13 +432,16 @@ export default function SearchRoute() {
     }
 
     for (const video of relatedVideos) {
-      const score = scoreContent(
-        queryText,
-        video.title,
-        video.creator,
-        video.creatorBio,
-        video.course
-      );
+      const score =
+        scoreContent(
+          queryText,
+          video.title,
+          video.creator,
+          video.creatorBio,
+          video.course
+        ) +
+        (includesCourseContext(video.course, contextCourseLabel) ? 4 : 0) +
+        2;
 
       if (score > 0) {
         results.push({
@@ -362,13 +452,14 @@ export default function SearchRoute() {
           badge: 'Videoaula',
           routeType: 'resource',
           routeId: 'videoaulas',
+          routeParams: { id: 'videoaulas', focus: video.id },
           score,
         });
       }
     }
 
     for (const resource of relatedResources) {
-      const score = scoreContent(queryText, resource.title, resource.summary);
+      const score = scoreContent(queryText, resource.title, resource.summary) + 2;
 
       if (score > 0) {
         results.push({
@@ -385,13 +476,16 @@ export default function SearchRoute() {
     }
 
     for (const book of relatedBooks) {
-      const score = scoreContent(
-        queryText,
-        book.title,
-        book.author,
-        book.authorBio,
-        book.course
-      );
+      const score =
+        scoreContent(
+          queryText,
+          book.title,
+          book.author,
+          book.authorBio,
+          book.course
+        ) +
+        (includesCourseContext(book.course, contextCourseLabel) ? 4 : 0) +
+        1;
 
       if (score > 0) {
         results.push({
@@ -408,7 +502,9 @@ export default function SearchRoute() {
     }
 
     for (const method of studyMethods) {
-      const score = scoreContent(queryText, method.title, method.description, method.howItWorks);
+      const score =
+        scoreContent(queryText, method.title, method.description, method.howItWorks) +
+        2;
 
       if (score > 0) {
         results.push({
@@ -419,13 +515,16 @@ export default function SearchRoute() {
           badge: 'Metodo',
           routeType: 'resource',
           routeId: 'metodos-estudo',
+          routeParams: { id: 'metodos-estudo', focus: method.id },
           score,
         });
       }
     }
 
     for (const formula of formulaGuides) {
-      const score = scoreContent(queryText, formula.title, formula.area, formula.explanation);
+      const score =
+        scoreContent(queryText, formula.title, formula.area, formula.explanation) +
+        (supportsExactResources ? 2 : 1);
 
       if (score > 0) {
         results.push({
@@ -436,13 +535,16 @@ export default function SearchRoute() {
           badge: 'Formula',
           routeType: 'resource',
           routeId: 'formulas',
+          routeParams: { id: 'formulas', focus: formula.id },
           score,
         });
       }
     }
 
     for (const topic of enemTopics) {
-      const score = scoreContent(queryText, topic.subject, topic.branch, topic.summary);
+      const score =
+        scoreContent(queryText, topic.subject, topic.branch, topic.summary) +
+        (includesCourseContext(topic.subject, contextCourseLabel) ? 3 : 1);
 
       if (score > 0) {
         results.push({
@@ -459,7 +561,10 @@ export default function SearchRoute() {
     }
 
     for (const exam of simulatedExams) {
-      const score = scoreContent(queryText, exam.title, exam.course, exam.focus);
+      const score =
+        scoreContent(queryText, exam.title, exam.course, exam.focus) +
+        (includesCourseContext(exam.course, contextCourseLabel) ? 4 : 0) +
+        2;
 
       if (score > 0) {
         results.push({
@@ -476,12 +581,15 @@ export default function SearchRoute() {
     }
 
     for (const summary of customSummaries) {
-      const score = scoreContent(
-        queryText,
-        summary.subject,
-        summary.summary,
-        summary.openQuestions
-      );
+      const score =
+        scoreContent(
+          queryText,
+          summary.subject,
+          summary.summary,
+          summary.openQuestions
+        ) +
+        (includesCourseContext(summary.subject, contextCourseLabel) ? 4 : 0) +
+        1;
 
       if (score > 0) {
         results.push({
@@ -498,14 +606,16 @@ export default function SearchRoute() {
     }
 
     for (const knowledge of courseKnowledge) {
-      const score = scoreContent(
-        queryText,
-        knowledge.courseLabel,
-        knowledge.overview,
-        knowledge.focusAreas.join(' '),
-        knowledge.relatedTerms.join(' '),
-        knowledge.suggestedPaths.join(' ')
-      );
+      const score =
+        scoreContent(
+          queryText,
+          knowledge.courseLabel,
+          knowledge.overview,
+          knowledge.focusAreas.join(' '),
+          knowledge.relatedTerms.join(' '),
+          knowledge.suggestedPaths.join(' ')
+        ) +
+        (includesCourseContext(knowledge.courseLabel, contextCourseLabel) ? 5 : 0);
 
       if (score > 0) {
         results.push({
@@ -514,14 +624,27 @@ export default function SearchRoute() {
           subtitle: 'Curso gerenciado',
           description: knowledge.overview,
           badge: 'Curso',
-          routeType: 'none',
+          routeType: 'tab',
+          routeId: 'pesquisar',
+          routeParams: {
+            query: appliedQuery,
+            course: knowledge.courseId,
+            mode: appliedMode,
+            filters: appliedFilters.join(','),
+          },
           score,
         });
       }
     }
 
     for (const material of studyMaterials) {
-      const score = scoreContent(queryText, material.title, material.kind, material.mimeType);
+      const score =
+        scoreContent(
+          queryText,
+          material.title,
+          material.kind,
+          material.mimeType
+        ) + 1;
 
       if (score > 0) {
         results.push({
@@ -547,22 +670,51 @@ export default function SearchRoute() {
       }
     }
 
-    return results.sort((a, b) => b.score - a.score).slice(0, 12);
+    const uniqueResults = [];
+    const seenIds = new Set();
+
+    for (const result of results.sort((a, b) => b.score - a.score)) {
+      if (seenIds.has(result.id)) {
+        continue;
+      }
+
+      seenIds.add(result.id);
+      uniqueResults.push(result);
+    }
+
+    return uniqueResults;
   }, [
+    appliedCourseLabel,
+    appliedFilters,
+    appliedMode,
     appliedQuery,
     courseKnowledge,
     customSummaries,
     filteredArticles,
     relatedBooks,
     relatedResources,
+    relatedCourseLabel,
     relatedVideos,
     studyMaterials,
   ]);
+
+  function toggleFilter(filterId: string) {
+    setSelectedFilters((current) =>
+      current.includes(filterId)
+        ? current.filter((item) => item !== filterId)
+        : [...current, filterId]
+    );
+  }
 
   return (
     <ScreenLayout>
       <SearchScreen
         appliedQuery={appliedQuery}
+        appliedMode={appliedMode}
+        appliedFilters={appliedFilters}
+        discoveryMode={discoveryMode}
+        discoveryProfile={discoveryProfile}
+        appliedDiscoveryProfile={appliedDiscoveryProfile}
         filteredArticles={filteredArticles}
         hasPendingSearch={hasPendingSearch}
         isThemeInsightLoading={isThemeInsightLoading}
@@ -570,6 +722,9 @@ export default function SearchRoute() {
         relatedCourseLabel={relatedCourseLabel}
         relatedResources={relatedResources}
         relatedVideos={relatedVideos}
+        selectedFilters={selectedFilters}
+        toggleFilter={toggleFilter}
+        clearFilters={() => setSelectedFilters([])}
         themeInsight={themeInsight}
         themeInsightError={themeInsightError}
         unifiedResults={unifiedResults}
@@ -577,6 +732,7 @@ export default function SearchRoute() {
         setQuery={setQuery}
         selectedCourse={selectedCourse}
         setSelectedCourse={setSelectedCourse}
+        setDiscoveryMode={setDiscoveryMode}
       />
     </ScreenLayout>
   );

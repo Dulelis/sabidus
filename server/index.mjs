@@ -52,6 +52,219 @@ function normalizeStringList(value, limit = 10) {
     .slice(0, limit);
 }
 
+const discoveryProfiles = {
+  general: {
+    label: 'busca geral',
+    promptInstruction:
+      'Equilibre referencias da web, explicacao inicial, consultas uteis e material de aprofundamento.',
+    allowedDomains: [],
+    priorityDomains: [],
+    blockedPatterns: ['wikipedia.org', 'blogspot.', 'wordpress.', 'medium.com'],
+    queryInstruction:
+      'As consultas devem cobrir explicacao do tema, referencia inicial e aprofundamento pratico.',
+  },
+  'scientific-articles': {
+    label: 'artigos cientificos',
+    promptInstruction:
+      'Priorize artigos cientificos, revisoes e paginas de indexadores academicos. Dê preferencia para SciELO, Google Academico, Portal de Periodicos CAPES e PubMed/MEDLINE. Nao use Wikipedia, blogs, foruns ou paginas promocionais.',
+    allowedDomains: [
+      'scielo.br',
+      'scholar.google.com',
+      'periodicos.capes.gov.br',
+      'pubmed.ncbi.nlm.nih.gov',
+      'ncbi.nlm.nih.gov',
+      'doi.org',
+      'nih.gov',
+      'springer.com',
+      'sciencedirect.com',
+      'wiley.com',
+      'nature.com',
+      '.edu',
+      '.gov',
+      '.gov.br',
+    ],
+    priorityDomains: [
+      'scielo.br',
+      'scholar.google.com',
+      'periodicos.capes.gov.br',
+      'pubmed.ncbi.nlm.nih.gov',
+      'ncbi.nlm.nih.gov',
+    ],
+    blockedPatterns: ['wikipedia.org', 'blogspot.', 'wordpress.', 'medium.com', '/blog/'],
+    queryInstruction:
+      'As consultas devem ficar mais fechadas e, quando fizer sentido, incluir bases como SciELO, Google Academico, CAPES ou PubMed.',
+    filterPrompts: {
+      'tema-central': 'mantenha foco estrito no nucleo central do tema e descarte assuntos paralelos',
+      'ultimos-5-anos': 'priorize resultados recentes, preferencialmente dos ultimos 5 anos',
+      revisoes: 'prefira revisoes, estados da arte e sinteses academicas',
+      'sem-blogs': 'ignore wikipedia, blogs, foruns e conteudos sem curadoria academica',
+    },
+  },
+  'academic-research': {
+    label: 'pesquisas academicas',
+    promptInstruction:
+      'Rastreie pesquisas academicas da area, linhas de investigacao, autores, lacunas e estudos aplicados. Priorize fontes academicas ou institucionais e evite Wikipedia e blogs.',
+    allowedDomains: [
+      'scielo.br',
+      'scholar.google.com',
+      'periodicos.capes.gov.br',
+      'pubmed.ncbi.nlm.nih.gov',
+      'ncbi.nlm.nih.gov',
+      'doi.org',
+      'nih.gov',
+      'springer.com',
+      'sciencedirect.com',
+      'wiley.com',
+      'nature.com',
+      '.edu',
+      '.gov',
+      '.gov.br',
+      'repositorio',
+    ],
+    priorityDomains: [
+      'periodicos.capes.gov.br',
+      'scielo.br',
+      'scholar.google.com',
+      'pubmed.ncbi.nlm.nih.gov',
+    ],
+    blockedPatterns: ['wikipedia.org', 'blogspot.', 'wordpress.', 'medium.com', '/blog/'],
+    queryInstruction:
+      'As consultas devem mapear estado da arte, autores-chave, metodologias e pesquisas aplicadas da area.',
+    filterPrompts: {
+      'estado-da-arte': 'procure estados da arte, revisoes e mapeamentos da literatura',
+      'autores-chave': 'destaque autores recorrentes, grupos e referencias influentes',
+      aplicadas: 'destaque pesquisas aplicadas, evidencias praticas e estudos de caso',
+      'sem-blogs': 'ignore wikipedia, blogs, foruns e paginas sem carater academico',
+    },
+  },
+  channels: {
+    label: 'canais para assistir',
+    promptInstruction:
+      'Liste canais, playlists e videoaulas sobre o assunto, priorizando canais confiaveis, educativos e diretamente ligados ao tema.',
+    allowedDomains: ['youtube.com', 'youtu.be', 'vimeo.com'],
+    priorityDomains: ['youtube.com', 'youtu.be'],
+    blockedPatterns: ['wikipedia.org', 'blogspot.', 'wordpress.', 'medium.com'],
+    queryInstruction:
+      'As consultas devem focar em canais, playlists, aulas completas e revisoes em video sobre o tema.',
+    filterPrompts: {
+      'aulas-completas': 'prefira playlists, series ou aulas completas sobre o tema',
+      'revisao-rapida': 'inclua videos curtos de revisao quando forem realmente uteis',
+      'canais-br': 'priorize canais em portugues do Brasil quando houver boa cobertura',
+    },
+  },
+  'work-models': {
+    label: 'modelos de trabalhos',
+    promptInstruction:
+      'Relacione referencias, exemplos e formatos de trabalhos ligados ao assunto, como artigo, resenha, seminario, projeto ou TCC. Priorize materiais institucionais, academicos e orientacoes formais.',
+    allowedDomains: [
+      'periodicos.capes.gov.br',
+      'scielo.br',
+      'scholar.google.com',
+      'doi.org',
+      '.edu',
+      '.gov',
+      '.gov.br',
+      'repositorio',
+    ],
+    priorityDomains: ['periodicos.capes.gov.br', 'scielo.br', 'scholar.google.com', '.edu'],
+    blockedPatterns: ['wikipedia.org', 'blogspot.', 'wordpress.', 'medium.com'],
+    queryInstruction:
+      'As consultas devem focar em referencias de trabalhos, estrutura de genero academico e exemplos ligados ao tema.',
+    filterPrompts: {
+      artigo: 'inclua exemplos ou referencias para artigo academico',
+      resenha: 'inclua exemplos ou referencias para resenha critica',
+      seminario: 'inclua exemplos ou referencias para seminario ou apresentacao',
+      'tcc-projeto': 'inclua exemplos ou referencias para projeto, pre-projeto ou TCC',
+    },
+  },
+};
+
+function normalizeDiscoveryMode(value) {
+  const normalizedValue = typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+  return discoveryProfiles[normalizedValue] ? normalizedValue : 'general';
+}
+
+function getDiscoveryProfile(mode) {
+  return discoveryProfiles[normalizeDiscoveryMode(mode)];
+}
+
+function normalizeFilterIds(value) {
+  return normalizeStringList(value, 8).map((item) => item.toLowerCase());
+}
+
+function buildFilterPrompt(profile, filterIds) {
+  if (!profile.filterPrompts) {
+    return '';
+  }
+
+  return filterIds
+    .map((filterId) => profile.filterPrompts?.[filterId])
+    .filter(Boolean)
+    .join('; ');
+}
+
+function parseHostname(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function matchesDomain(hostname, domainPattern) {
+  const normalizedPattern = domainPattern.toLowerCase();
+
+  if (!hostname || !normalizedPattern) {
+    return false;
+  }
+
+  if (normalizedPattern.startsWith('.')) {
+    return hostname.endsWith(normalizedPattern);
+  }
+
+  return hostname === normalizedPattern || hostname.endsWith(`.${normalizedPattern}`);
+}
+
+function isBlockedSource(url, profile) {
+  const normalizedUrl = url.toLowerCase();
+
+  return profile.blockedPatterns.some((pattern) => normalizedUrl.includes(pattern));
+}
+
+function isAllowedSource(url, profile) {
+  if (!profile.allowedDomains.length) {
+    return true;
+  }
+
+  const hostname = parseHostname(url);
+
+  return profile.allowedDomains.some((domainPattern) => matchesDomain(hostname, domainPattern));
+}
+
+function getPriorityScore(url, profile) {
+  const hostname = parseHostname(url);
+  let score = 0;
+
+  for (const domainPattern of profile.priorityDomains) {
+    if (matchesDomain(hostname, domainPattern)) {
+      score += 5;
+    }
+  }
+
+  for (const domainPattern of profile.allowedDomains) {
+    if (matchesDomain(hostname, domainPattern)) {
+      score += 1;
+    }
+  }
+
+  if (/youtube|youtu\.be|vimeo/i.test(url)) {
+    score += 2;
+  }
+
+  return score;
+}
+
 function getLatestAppVersion() {
   try {
     const appConfig = JSON.parse(readFileSync(appConfigPath, 'utf8'));
@@ -243,12 +456,18 @@ app.post('/api/deep-search', async (req, res) => {
     const {
       theme = '',
       course = '',
+      mode = 'general',
+      filters = [],
       courseOverview = '',
       focusAreas = [],
       relatedTerms = [],
     } = req.body ?? {};
     const normalizedTheme = theme.trim();
     const normalizedCourse = course.trim();
+    const normalizedMode = normalizeDiscoveryMode(mode);
+    const discoveryProfile = getDiscoveryProfile(normalizedMode);
+    const normalizedFilters = normalizeFilterIds(filters);
+    const filtersPrompt = buildFilterPrompt(discoveryProfile, normalizedFilters);
     const normalizedCourseOverview = courseOverview.trim();
     const normalizedFocusAreas = normalizeStringList(focusAreas, 6);
     const normalizedRelatedTerms = normalizeStringList(relatedTerms, 8);
@@ -279,9 +498,14 @@ Regras:
 - Se houver curso informado, adapte o recorte para esse curso.
 - Se o tema for amplo, escolha o recorte inicial mais util para o aluno e deixe isso claro.
 - Nao invente links no JSON.
+- Respeite o modo de descoberta e os filtros ativos.
 
 Tema de estudo: ${normalizedTheme}
 Curso relacionado: ${normalizedCourse || 'nao informado'}
+Modo de descoberta: ${discoveryProfile.label}
+Instrucao do modo: ${discoveryProfile.promptInstruction}
+Filtros ativos: ${filtersPrompt || 'nenhum filtro adicional'}
+Instrucao para as consultas: ${discoveryProfile.queryInstruction}
 Contexto do curso: ${normalizedCourseOverview || 'nao informado'}
 Areas de foco do curso: ${normalizedFocusAreas.join('; ') || 'nao informado'}
 Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao informado'}
@@ -311,7 +535,21 @@ Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao inform
       });
     }
 
-    const videoSources = uniqueSources.filter((source) =>
+    const filteredSources = uniqueSources
+      .filter((source) => !isBlockedSource(source.url, discoveryProfile))
+      .filter((source) => isAllowedSource(source.url, discoveryProfile))
+      .sort((first, second) =>
+        getPriorityScore(second.url, discoveryProfile) -
+        getPriorityScore(first.url, discoveryProfile)
+      );
+    const fallbackSources = uniqueSources
+      .filter((source) => !isBlockedSource(source.url, discoveryProfile))
+      .sort((first, second) =>
+        getPriorityScore(second.url, discoveryProfile) -
+        getPriorityScore(first.url, discoveryProfile)
+      );
+    const finalSources = filteredSources.length > 0 ? filteredSources : fallbackSources;
+    const videoSources = finalSources.filter((source) =>
       /youtube|youtu\.be|vimeo|video/i.test(source.url)
     );
     const groundedQueries = normalizeStringList(groundingMetadata?.webSearchQueries, 6);
@@ -330,7 +568,7 @@ Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao inform
       nextSteps: normalizeStringList(parsed.nextSteps, 3),
       studyQuestions: normalizeStringList(parsed.studyQuestions, 4),
       webSearchQueries: mergedQueries,
-      sources: uniqueSources.slice(0, 10),
+      sources: finalSources.slice(0, 10),
       videos: videoSources.slice(0, 6),
     });
   } catch (error) {

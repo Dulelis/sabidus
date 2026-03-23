@@ -129,9 +129,10 @@ export const articles: Article[] = [
 ];
 
 export const researchSources: ResearchSource[] = [
-  { name: 'Google Scholar', type: 'Artigos academicos' },
-  { name: 'SciELO', type: 'Pesquisas em portugues' },
-  { name: 'PubMed', type: 'Saude e biociencias' },
+  { name: 'SciELO', type: 'Artigos cientificos em portugues' },
+  { name: 'Google Scholar', type: 'Busca academica ampla' },
+  { name: 'Portal CAPES', type: 'Periodicos e revisoes' },
+  { name: 'PubMed / MEDLINE', type: 'Saude e biociencias' },
 ];
 
 export const agenda: AgendaItem[] = [

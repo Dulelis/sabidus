@@ -1,5 +1,12 @@
 export type TabKey = 'Inicio' | 'Pesquisar' | 'Agenda' | 'Recursos' | 'Conta';
 
+export type DiscoveryMode =
+  | 'general'
+  | 'scientific-articles'
+  | 'academic-research'
+  | 'channels'
+  | 'work-models';
+
 export type HighlightTopic = {
   id: string;
   title: string;
@@ -160,5 +167,6 @@ export type UnifiedSearchResult = {
   badge: string;
   routeType: 'article' | 'resource' | 'tab' | 'external' | 'none';
   routeId?: string;
+  routeParams?: Record<string, string>;
   routeUrl?: string;
 };

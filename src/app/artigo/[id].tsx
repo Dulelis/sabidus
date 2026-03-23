@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Text, TouchableOpacity, View } from 'react-native';
 
 import { ScreenLayout } from '@/components/ScreenLayout';
+import { printStudyContent, shareStudyContent } from '@/lib/contentActions';
 import { findArticleById } from '@/data/mockData';
 import { useStudy } from '@/context/StudyContext';
 import { styles } from '@/styles/appStyles';
@@ -52,6 +53,29 @@ export default function ArticleDetailRoute() {
           }
         >
           <Text style={styles.secondaryButtonText}>Ver relacionados</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => {
+            void shareStudyContent({
+              title: article.title,
+              message: `${article.description}\n${article.author} (${article.year})`,
+            });
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Compartilhar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => {
+            void printStudyContent({
+              title: article.title,
+              subtitle: `${article.course} | ${article.source} | ${article.year}`,
+              body: [article.description, article.body, `${article.author} - ${article.authorBio}`],
+            });
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Imprimir</Text>
         </TouchableOpacity>
       </View>
 

@@ -60,6 +60,8 @@ type StudyPlanRequest = {
 type DeepSearchRequest = {
   theme: string;
   course?: string;
+  mode?: string;
+  filters?: string[];
   courseOverview?: string;
   focusAreas?: string[];
   relatedTerms?: string[];

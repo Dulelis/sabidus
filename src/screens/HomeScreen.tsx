@@ -1,6 +1,8 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Linking, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import {
   articles,
@@ -9,6 +11,19 @@ import {
   highlightTopics,
   weeklySchedule,
 } from '../data/mockData';
+import {
+  buildDiscoveryFallbackQuery,
+  getDiscoveryProfile,
+} from '../lib/discoveryProfiles';
+import {
+  buildMaterialLabelFromLink,
+  createMaterialFromCameraAsset,
+  createMaterialFromDocumentAsset,
+  deleteStoredMaterialFile,
+  getMaterialKindLabel,
+  normalizeMaterialUrlInput,
+  openStudyMaterialUrl,
+} from '../lib/studyMaterials';
 import { styles } from '../styles/appStyles';
 import { MetricCard } from '../components/MetricCard';
 import { useStudy } from '../context/StudyContext';
@@ -21,12 +36,6 @@ type HomeScreenProps = {
   setSelectedCourse: (value: string) => void;
 };
 
-type WebPickedMaterial = {
-  title: string;
-  url: string;
-  mimeType: string;
-};
-
 type HomeAlert = {
   id: string;
   title: string;
@@ -34,81 +43,6 @@ type HomeAlert = {
   priority: 'Alta' | 'Media' | 'Baixa';
   target: 'agenda' | 'inicio';
 };
-
-function buildMaterialLabelFromLink(value: string) {
-  try {
-    const parsedUrl = new URL(value);
-    const pathName = parsedUrl.pathname.split('/').filter(Boolean).pop();
-
-    return pathName ? decodeURIComponent(pathName) : parsedUrl.hostname;
-  } catch {
-    return value;
-  }
-}
-
-function openMaterialInBrowser(url: string) {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer');
-    return;
-  }
-
-  void Linking.openURL(url);
-}
-
-async function pickWebMaterial(options: {
-  accept: string;
-  capture?: 'environment';
-}): Promise<WebPickedMaterial | null> {
-  const browserDocument = (globalThis as { document?: any }).document;
-  const browserUrl = (globalThis as { URL?: any }).URL;
-
-  if (!browserDocument || !browserUrl) {
-    return null;
-  }
-
-  return new Promise((resolve) => {
-    const input = browserDocument.createElement('input');
-    input.type = 'file';
-    input.accept = options.accept;
-
-    if (options.capture) {
-      input.capture = options.capture;
-    }
-
-    input.onchange = () => {
-      const file = input.files?.[0];
-
-      if (!file) {
-        resolve(null);
-        return;
-      }
-
-      resolve({
-        title: file.name || 'material',
-        url: browserUrl.createObjectURL(file),
-        mimeType: file.type || 'application/octet-stream',
-      });
-    };
-
-    input.click();
-  });
-}
-
-function getMaterialKindLabel(kind: StudyMaterial['kind']) {
-  if (kind === 'arquivo') {
-    return 'Arquivo interno';
-  }
-
-  if (kind === 'arquivo-externo') {
-    return 'Arquivo externo';
-  }
-
-  if (kind === 'camera') {
-    return 'Captura pela camera';
-  }
-
-  return 'Link de estudo';
-}
 
 function parseTimeToMinutes(value: string) {
   const [hoursText, minutesText] = value.split(':');
@@ -208,6 +142,7 @@ export function HomeScreen({
     deleteCourse,
     desiredCourse,
     addStudyMaterial,
+    updateStudyMaterial,
     openSearchTheme,
     deleteStudyMaterial,
     savedArticleIds,
@@ -220,6 +155,9 @@ export function HomeScreen({
   const [courseSearch, setCourseSearch] = useState('');
   const [materialTitle, setMaterialTitle] = useState('');
   const [materialLink, setMaterialLink] = useState('');
+  const [materialKind, setMaterialKind] = useState<'arquivo-externo' | 'link'>('link');
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
+  const [isManagingMaterial, setIsManagingMaterial] = useState(false);
 
   const visibleCourses = useMemo(() => {
     const normalizedCourseSearch = courseSearch.trim().toLowerCase();
@@ -248,6 +186,14 @@ export function HomeScreen({
           (item) => item.courseLabel.toLowerCase() === courseSearch.trim().toLowerCase()
         ) || null
       : null;
+  const editingMaterial =
+    studyMaterials.find((material) => material.id === editingMaterialId) || null;
+  const activeManualMaterialKind =
+    editingMaterial?.kind === 'arquivo-externo' || editingMaterial?.kind === 'link'
+      ? editingMaterial.kind
+      : materialKind;
+  const isEditingLocalMaterial =
+    editingMaterial?.kind === 'arquivo' || editingMaterial?.kind === 'camera';
 
   const filteredHighlights = highlightTopics.filter((item) =>
     selectedCourse === 'todos'
@@ -363,16 +309,48 @@ export function HomeScreen({
   const discoveryActions: Record<string, () => void> = {
     'Artigos cientificos': () =>
       openSearchTheme({
-        query: query || desiredCourse || 'artigos cientificos',
+        query: buildDiscoveryFallbackQuery('scientific-articles', {
+          currentQuery: query,
+          desiredCourse,
+          selectedCourseLabel,
+        }),
         course: selectedCourse,
+        mode: 'scientific-articles',
+        filters: getDiscoveryProfile('scientific-articles').filters.map((item) => item.id),
       }),
     'Pesquisas academicas': () =>
       openSearchTheme({
-        query: query || 'pesquisas academicas',
+        query: buildDiscoveryFallbackQuery('academic-research', {
+          currentQuery: query,
+          desiredCourse,
+          selectedCourseLabel,
+        }),
         course: selectedCourse,
+        mode: 'academic-research',
+        filters: getDiscoveryProfile('academic-research').filters.map((item) => item.id),
       }),
-    'Canais para assistir': () => router.push('/recurso/videoaulas'),
-    'Modelos de trabalhos': () => router.push('/recurso/escrita'),
+    'Canais para assistir': () =>
+      openSearchTheme({
+        query: buildDiscoveryFallbackQuery('channels', {
+          currentQuery: query,
+          desiredCourse,
+          selectedCourseLabel,
+        }),
+        course: selectedCourse,
+        mode: 'channels',
+        filters: ['aulas-completas', 'canais-br'],
+      }),
+    'Modelos de trabalhos': () =>
+      openSearchTheme({
+        query: buildDiscoveryFallbackQuery('work-models', {
+          currentQuery: query,
+          desiredCourse,
+          selectedCourseLabel,
+        }),
+        course: selectedCourse,
+        mode: 'work-models',
+        filters: ['artigo', 'seminario'],
+      }),
   };
 
   function handleSearchFromHome() {
@@ -436,83 +414,192 @@ export function HomeScreen({
     setFeedbackMessage(`Curso "${labelToDelete}" removido do catalogo.`);
   }
 
-  function handleAddMaterialFromLink(kind: 'arquivo-externo' | 'link') {
-    const normalizedLink = materialLink.trim();
+  function resetMaterialForm(nextKind: 'arquivo-externo' | 'link' = 'link') {
+    setMaterialTitle('');
+    setMaterialLink('');
+    setMaterialKind(nextKind);
+    setEditingMaterialId(null);
+  }
+
+  function handleStartEditingMaterial(material: StudyMaterial) {
+    setEditingMaterialId(material.id);
+    setMaterialTitle(material.title);
+    setMaterialLink(material.url);
+
+    if (material.kind === 'arquivo-externo' || material.kind === 'link') {
+      setMaterialKind(material.kind);
+    }
+
+    setFeedbackMessage(`Editando "${material.title}". Ajuste e salve quando terminar.`);
+  }
+
+  function handleCancelMaterialEdit() {
+    resetMaterialForm(materialKind);
+    setFeedbackMessage('Edicao do material cancelada.');
+  }
+
+  function handleSaveMaterialFromForm() {
+    const normalizedLink = normalizeMaterialUrlInput(materialLink);
+    const resolvedKind =
+      editingMaterial?.kind === 'arquivo' || editingMaterial?.kind === 'camera'
+        ? editingMaterial.kind
+        : activeManualMaterialKind;
+    const resolvedTitle = materialTitle.trim() || buildMaterialLabelFromLink(normalizedLink);
 
     if (!normalizedLink) {
-      setFeedbackMessage('Cole um link antes de adicionar um material externo.');
+      setFeedbackMessage('Informe um link, download ou endereco do material antes de salvar.');
       return;
     }
 
-    const normalizedTitle = materialTitle.trim() || buildMaterialLabelFromLink(normalizedLink);
+    if (editingMaterial) {
+      const updateResult = updateStudyMaterial({
+        id: editingMaterial.id,
+        title: resolvedTitle,
+        kind: resolvedKind,
+        url: normalizedLink,
+        mimeType:
+          editingMaterial.mimeType ||
+          (resolvedKind === 'arquivo-externo' ? 'application/octet-stream' : 'text/html'),
+        storageMode: editingMaterial.storageMode,
+      });
+
+      if (updateResult === 'duplicate') {
+        setFeedbackMessage('Ja existe outro material com esse mesmo endereco.');
+        return;
+      }
+
+      if (updateResult === 'invalid') {
+        setFeedbackMessage('Nao foi possivel salvar essa edicao.');
+        return;
+      }
+
+      resetMaterialForm(activeManualMaterialKind);
+      setFeedbackMessage(`Material "${resolvedTitle}" atualizado com sucesso.`);
+      return;
+    }
+
     const createdMaterial = addStudyMaterial({
-      title: normalizedTitle,
-      kind,
+      title: resolvedTitle,
+      kind: resolvedKind,
       url: normalizedLink,
       mimeType:
-        kind === 'arquivo-externo' ? 'application/octet-stream' : 'text/html',
+        resolvedKind === 'arquivo-externo' ? 'application/octet-stream' : 'text/html',
       storageMode: 'persisted',
     });
 
     if (!createdMaterial) {
-      setFeedbackMessage('Esse link ja foi salvo ou esta incompleto.');
+      setFeedbackMessage('Esse material ja foi salvo ou o endereco esta incompleto.');
       return;
     }
 
-    setMaterialTitle('');
-    setMaterialLink('');
-    setFeedbackMessage(`Material "${createdMaterial.title}" salvo na Inicio.`);
+    resetMaterialForm(activeManualMaterialKind);
+    setFeedbackMessage(`Material "${createdMaterial.title}" salvo na biblioteca do aparelho.`);
   }
 
-  async function handleAddLocalMaterial(kind: 'arquivo' | 'camera') {
-    if (Platform.OS !== 'web') {
+  async function handlePickInternalMaterial() {
+    setIsManagingMaterial(true);
+
+    try {
+      const pickedResult = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+        base64: false,
+      });
+
+      if (pickedResult.canceled || !pickedResult.assets?.[0]) {
+        setFeedbackMessage('Nenhum arquivo interno foi selecionado.');
+        return;
+      }
+
+      const preparedMaterial = await createMaterialFromDocumentAsset(pickedResult.assets[0]);
+      const createdMaterial = addStudyMaterial({
+        title: materialTitle.trim() || preparedMaterial.title,
+        kind: 'arquivo',
+        url: preparedMaterial.url,
+        mimeType: preparedMaterial.mimeType,
+        storageMode: preparedMaterial.storageMode,
+      });
+
+      if (!createdMaterial) {
+        await deleteStoredMaterialFile(preparedMaterial.url);
+        setFeedbackMessage('Esse arquivo ja esta salvo ou nao pode ser adicionado.');
+        return;
+      }
+
+      resetMaterialForm(activeManualMaterialKind);
+      setFeedbackMessage(`Arquivo "${createdMaterial.title}" copiado e salvo no aparelho.`);
+    } catch (error) {
       setFeedbackMessage(
-        'No momento, arquivo e camera estao liberados na versao web do app.'
+        error instanceof Error
+          ? error.message
+          : 'Nao foi possivel selecionar um arquivo interno agora.'
       );
-      return;
+    } finally {
+      setIsManagingMaterial(false);
     }
+  }
 
-    const pickedMaterial = await pickWebMaterial({
-      accept:
-        kind === 'camera'
-          ? 'image/*'
-          : '.pdf,.doc,.docx,.ppt,.pptx,.txt,.png,.jpg,.jpeg,image/*',
-      capture: kind === 'camera' ? 'environment' : undefined,
-    });
+  async function handleCaptureMaterial() {
+    setIsManagingMaterial(true);
 
-    if (!pickedMaterial) {
-      setFeedbackMessage('Nenhum material foi selecionado.');
-      return;
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (!permission.granted) {
+        setFeedbackMessage('Permita o uso da camera para registrar um material.');
+        return;
+      }
+
+      const captureResult = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        cameraType: ImagePicker.CameraType.back,
+        mediaTypes: ['images'],
+        quality: 1,
+      });
+
+      if (captureResult.canceled || !captureResult.assets?.[0]) {
+        setFeedbackMessage('Nenhuma captura foi registrada.');
+        return;
+      }
+
+      const preparedMaterial = await createMaterialFromCameraAsset(captureResult.assets[0]);
+      const createdMaterial = addStudyMaterial({
+        title: materialTitle.trim() || preparedMaterial.title,
+        kind: 'camera',
+        url: preparedMaterial.url,
+        mimeType: preparedMaterial.mimeType,
+        storageMode: preparedMaterial.storageMode,
+      });
+
+      if (!createdMaterial) {
+        await deleteStoredMaterialFile(preparedMaterial.url);
+        setFeedbackMessage('Nao foi possivel salvar essa captura agora.');
+        return;
+      }
+
+      resetMaterialForm(activeManualMaterialKind);
+      setFeedbackMessage(`Captura "${createdMaterial.title}" salva para estudo.`);
+    } catch (error) {
+      setFeedbackMessage(
+        error instanceof Error
+          ? error.message
+          : 'Nao foi possivel abrir a camera agora.'
+      );
+    } finally {
+      setIsManagingMaterial(false);
     }
-
-    const createdMaterial = addStudyMaterial({
-      title: materialTitle.trim() || pickedMaterial.title,
-      kind,
-      url: pickedMaterial.url,
-      mimeType: pickedMaterial.mimeType,
-      storageMode: 'session',
-    });
-
-    if (!createdMaterial) {
-      const browserUrl = (globalThis as { URL?: any }).URL;
-      browserUrl?.revokeObjectURL?.(pickedMaterial.url);
-      setFeedbackMessage('Esse material ja foi adicionado nesta sessao.');
-      return;
-    }
-
-    setMaterialTitle('');
-    setFeedbackMessage(
-      kind === 'camera'
-        ? `Captura "${createdMaterial.title}" adicionada para consulta rapida.`
-        : `Arquivo "${createdMaterial.title}" adicionado nesta sessao.`
-    );
   }
 
   function handleOpenMaterial(material: StudyMaterial) {
-    openMaterialInBrowser(material.url);
+    void openStudyMaterialUrl(material.url).catch((error) => {
+      setFeedbackMessage(
+        error instanceof Error ? error.message : 'Nao foi possivel abrir esse material.'
+      );
+    });
   }
 
-  function handleDeleteMaterial(material: StudyMaterial) {
+  async function handleDeleteMaterial(material: StudyMaterial) {
     const wasDeleted = deleteStudyMaterial(material.id);
 
     if (!wasDeleted) {
@@ -520,12 +607,17 @@ export function HomeScreen({
       return;
     }
 
-    if (material.storageMode === 'session' && Platform.OS === 'web') {
-      const browserUrl = (globalThis as { URL?: any }).URL;
-      browserUrl?.revokeObjectURL?.(material.url);
+    try {
+      await deleteStoredMaterialFile(material.url);
+    } catch {
+      // Keep the library state clean even if the file copy has already been removed.
     }
 
-    setFeedbackMessage(`Material "${material.title}" removido da Inicio.`);
+    if (editingMaterialId === material.id) {
+      resetMaterialForm(activeManualMaterialKind);
+    }
+
+    setFeedbackMessage(`Material "${material.title}" removido da biblioteca.`);
   }
 
   return (
@@ -565,6 +657,15 @@ export function HomeScreen({
           <Text style={styles.sectionLink}>{studyMaterials.length} salvos</Text>
         </View>
         <View style={styles.formCard}>
+          {editingMaterial ? (
+            <View style={styles.savedSummaryCard}>
+              <Text style={styles.savedSummaryText}>
+                Editando {getMaterialKindLabel(editingMaterial.kind).toLowerCase()}:
+                {' '}
+                {editingMaterial.title}
+              </Text>
+            </View>
+          ) : null}
           <Text style={styles.formLabel}>Titulo do material</Text>
           <TextInput
             placeholder="Ex: apostila de anatomia"
@@ -573,48 +674,96 @@ export function HomeScreen({
             value={materialTitle}
             onChangeText={setMaterialTitle}
           />
-          <Text style={styles.formLabel}>Link externo ou de download</Text>
+          <Text style={styles.formLabel}>
+            {isEditingLocalMaterial
+              ? 'Endereco do arquivo salvo'
+              : 'Link externo, download ou reuniao online'}
+          </Text>
           <TextInput
-            placeholder="Cole um link para artigo, video ou arquivo externo"
+            placeholder={
+              isEditingLocalMaterial
+                ? 'Arquivo salvo no aparelho'
+                : 'Cole um link para artigo, PDF, Meet, Zoom ou video'
+            }
             placeholderTextColor="#7D8597"
             style={styles.searchInput}
             value={materialLink}
             onChangeText={setMaterialLink}
             autoCapitalize="none"
+            editable={!isEditingLocalMaterial}
           />
+          {!isEditingLocalMaterial ? (
+            <View style={styles.chipRow}>
+              <TouchableOpacity
+                style={[styles.chip, activeManualMaterialKind === 'link' && styles.chipActive]}
+                onPress={() => setMaterialKind('link')}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    activeManualMaterialKind === 'link' && styles.chipTextActive,
+                  ]}
+                >
+                  Link de estudo
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.chip,
+                  activeManualMaterialKind === 'arquivo-externo' && styles.chipActive,
+                ]}
+                onPress={() => setMaterialKind('arquivo-externo')}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    activeManualMaterialKind === 'arquivo-externo' && styles.chipTextActive,
+                  ]}
+                >
+                  Arquivo externo
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={[styles.searchButton, styles.controlButton]}
-              onPress={() => {
-                void handleAddLocalMaterial('arquivo');
-              }}
+              onPress={handleSaveMaterialFromForm}
             >
-              <Text style={styles.searchButtonText}>Arquivo interno</Text>
+              <Text style={styles.searchButtonText}>
+                {editingMaterial ? 'Salvar edicao' : 'Gravar material'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.secondaryButton, styles.controlButton]}
-              onPress={() => handleAddMaterialFromLink('arquivo-externo')}
+              onPress={handlePickInternalMaterial}
             >
-              <Text style={styles.secondaryButtonText}>Arquivo externo</Text>
+              <Text style={styles.secondaryButtonText}>
+                {isManagingMaterial ? 'Abrindo...' : 'Arquivo interno'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.secondaryButton, styles.controlButton]}
-              onPress={() => handleAddMaterialFromLink('link')}
+              onPress={handleCaptureMaterial}
             >
-              <Text style={styles.secondaryButtonText}>Link de estudo</Text>
+              <Text style={styles.secondaryButtonText}>
+                {isManagingMaterial ? 'Abrindo...' : 'Camera'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dangerButton, styles.controlButton]}
-              onPress={() => {
-                void handleAddLocalMaterial('camera');
-              }}
-            >
-              <Text style={styles.dangerButtonText}>Camera</Text>
-            </TouchableOpacity>
+            {editingMaterial ? (
+              <TouchableOpacity
+                style={[styles.dangerButton, styles.controlButton]}
+                onPress={handleCancelMaterialEdit}
+              >
+                <Text style={styles.dangerButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
           <Text style={styles.materialHelperText}>
-            Arquivos internos e capturas pela camera ficam disponiveis nesta sessao.
-            Links externos ficam salvos para reabrir depois.
+            Arquivos internos escolhidos no aparelho sao copiados para a biblioteca do app.
+            Links, downloads, reunioes online e videos podem ser gravados, editados, abertos e
+            excluidos daqui.
           </Text>
         </View>
 
@@ -649,8 +798,16 @@ export function HomeScreen({
                   <Text style={styles.secondaryButtonText}>Abrir</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  style={[styles.searchButton, styles.compactControlButton]}
+                  onPress={() => handleStartEditingMaterial(material)}
+                >
+                  <Text style={styles.searchButtonText}>Editar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[styles.dangerButton, styles.compactControlButton]}
-                  onPress={() => handleDeleteMaterial(material)}
+                  onPress={() => {
+                    void handleDeleteMaterial(material);
+                  }}
                 >
                   <Text style={styles.dangerButtonText}>Apagar</Text>
                 </TouchableOpacity>
@@ -819,9 +976,7 @@ export function HomeScreen({
               onPress={() => {
                 discoveryActions[item]?.();
                 setFeedbackMessage(`Abrindo ${item.toLowerCase()}.`);
-                if (item === 'Artigos cientificos' || item === 'Pesquisas academicas') {
-                  router.replace('/pesquisar');
-                }
+                router.replace('/pesquisar');
               }}
             >
               <Text style={styles.discoveryTitle}>{item}</Text>

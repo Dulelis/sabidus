@@ -35,7 +35,15 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Permitir que o SabiduS use a camera para registrar materiais de estudo.",
+          "microphonePermission": false,
+          "photosPermission": "Permitir que o SabiduS acesse suas fotos e arquivos para estudar."
+        }
+      ]
     ],
     "extra": {
       "router": {},

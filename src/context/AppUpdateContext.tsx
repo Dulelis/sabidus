@@ -54,7 +54,8 @@ export function AppUpdateProvider({ children }: PropsWithChildren) {
     let isMounted = true;
 
     async function loadUpdateInfo() {
-      if (Platform.OS === 'web') {
+      if (Platform.OS !== 'android') {
+        setAvailableUpdate(null);
         return;
       }
 

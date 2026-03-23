@@ -1,20 +1,26 @@
 {
   "expo": {
-    "name": "webschool-app",
-    "slug": "webschool-app",
+    "name": "SabiduS",
+    "slug": "sabidus",
     "version": "1.0.0",
+    "scheme": "sabidus",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "experiments": {
+      "typedRoutes": true
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sabidus.app"
     },
     "android": {
+      "package": "com.sabidus.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,7 +30,12 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "output": "static",
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router"
+    ]
   }
 }

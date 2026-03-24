@@ -236,6 +236,96 @@ function truncateText(value, limit = 260) {
   return `${normalizedValue.slice(0, limit - 1).trim()}...`;
 }
 
+function looksLikeDomain(value) {
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test((value || '').trim());
+}
+
+function decodeHtmlEntities(value) {
+  return (value || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function extractHtmlTagValue(html, pattern) {
+  const match = html.match(pattern);
+  return match?.[1] ? decodeHtmlEntities(match[1].trim()) : '';
+}
+
+async function enrichGroundedSource(source) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+
+  try {
+    const response = await fetch(source.url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 SabiduS/1.0',
+      },
+    });
+
+    const finalUrl = response.url || source.url;
+    const domain = formatSourceDomain(finalUrl) || source.domain;
+    const contentType = response.headers.get('content-type') || '';
+    let title = source.title;
+    let snippet = source.snippet;
+
+    if (/text\/html/i.test(contentType)) {
+      const html = await response.text();
+      const extractedTitle =
+        extractHtmlTagValue(html, /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+        extractHtmlTagValue(html, /<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i) ||
+        extractHtmlTagValue(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+      const extractedDescription =
+        extractHtmlTagValue(
+          html,
+          /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i
+        ) ||
+        extractHtmlTagValue(
+          html,
+          /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i
+        ) ||
+        extractHtmlTagValue(
+          html,
+          /<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']+)["']/i
+        );
+
+      if (extractedTitle && (looksLikeDomain(title) || title === source.url)) {
+        title = truncateText(extractedTitle, 140);
+      }
+
+      if (extractedDescription) {
+        snippet = truncateText(extractedDescription, 320);
+      }
+    }
+
+    return {
+      title,
+      url: finalUrl,
+      domain: domain || source.domain,
+      snippet:
+        snippet ||
+        'Resultado localizado pela busca na web para leitura e aprofundamento do tema pesquisado.',
+    };
+  } catch {
+    return {
+      title: source.title,
+      url: source.url,
+      domain: source.domain,
+      snippet:
+        source.snippet ||
+        'Resultado localizado pela busca na web para leitura e aprofundamento do tema pesquisado.',
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function matchesDomain(hostname, domainPattern) {
   const normalizedPattern = domainPattern.toLowerCase();
 
@@ -289,7 +379,7 @@ function getPriorityScore(url, profile) {
   return score;
 }
 
-function buildGroundedSources(groundingMetadata, discoveryProfile) {
+async function buildGroundedSources(groundingMetadata, discoveryProfile) {
   const chunks = Array.isArray(groundingMetadata?.groundingChunks)
     ? groundingMetadata.groundingChunks
     : [];
@@ -342,7 +432,7 @@ function buildGroundedSources(groundingMetadata, discoveryProfile) {
     }
   }
 
-  const uniqueSources = Array.from(sourceMap.values()).map((source) => ({
+  const rawSources = Array.from(sourceMap.values()).map((source) => ({
     title: source.title,
     url: source.url,
     domain: source.domain,
@@ -350,6 +440,12 @@ function buildGroundedSources(groundingMetadata, discoveryProfile) {
       truncateText(Array.from(source.snippets).join(' '), 320) ||
       'Trecho localizado na web sobre o tema pesquisado.',
   }));
+  const enrichedResults = await Promise.allSettled(
+    rawSources.slice(0, 16).map((source) => enrichGroundedSource(source))
+  );
+  const uniqueSources = enrichedResults.map((result, index) =>
+    result.status === 'fulfilled' ? result.value : rawSources[index]
+  );
 
   const filteredSources = uniqueSources
     .filter((source) => !isBlockedSource(source.url, discoveryProfile))
@@ -614,7 +710,7 @@ Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao inform
     const { outputText, groundingMetadata } = await runGroundedJsonPrompt(prompt);
     const parsed = parseModelJson(outputText, 'Deep search route');
 
-    const finalSources = buildGroundedSources(groundingMetadata, discoveryProfile);
+    const finalSources = await buildGroundedSources(groundingMetadata, discoveryProfile);
     const videoSources = finalSources.filter((source) =>
       /youtube|youtu\.be|vimeo|video/i.test(source.url)
     );

@@ -142,23 +142,32 @@ export function SearchScreen({
       item.courseId === selectedCourse ||
       item.courseLabel.toLowerCase() === selectedCourseLabel.toLowerCase()
   );
+  const searchContextLabel = selectedCourseLabel || relatedCourseLabel;
+  const normalizedSearchIntent = query.trim() || searchContextLabel;
+  const searchContextMessage = selectedCourseLabel
+    ? query.trim()
+      ? `A busca vai cruzar o curso ${selectedCourseLabel} com o tema digitado.`
+      : `Curso ativo: ${selectedCourseLabel}. Voce pode pesquisar so o curso ou combinar com um tema.`
+    : relatedCourseLabel
+      ? `Curso identificado para a pesquisa: ${relatedCourseLabel}. Digite um tema para refinar ou pesquise direto pelo nome do curso.`
+      : 'Escolha um curso para cruzar com o tema, ou pesquise diretamente pelo nome do curso.';
 
   function handleSaveSearch() {
-    if (!query.trim()) {
+    if (!normalizedSearchIntent) {
       return;
     }
 
-    registerSearch(query);
-    setMaterialFeedback(`Busca "${query.trim()}" salva para reaplicar depois.`);
+    registerSearch(normalizedSearchIntent);
+    setMaterialFeedback(`Busca "${normalizedSearchIntent}" salva para reaplicar depois.`);
   }
 
   function handleApplySearch() {
-    if (!query.trim()) {
+    if (!normalizedSearchIntent) {
       return;
     }
 
     openSearchTheme({
-      query,
+      query: normalizedSearchIntent,
       course: selectedCourse,
       mode: discoveryMode,
       filters: selectedFilters,
@@ -204,7 +213,7 @@ export function SearchScreen({
   }
 
   function handleOpenDeepSearch() {
-    const normalizedQuery = query.trim();
+    const normalizedQuery = normalizedSearchIntent;
 
     if (!normalizedQuery) {
       return;
@@ -402,13 +411,77 @@ export function SearchScreen({
       <View style={styles.section}>
         <Text style={styles.screenTitle}>Pesquisar</Text>
         <Text style={styles.screenSubtitle}>
-          {discoveryProfile.summary}
+          Cruze tema e curso na mesma busca. Voce pode pesquisar um curso, um tema ou combinar os dois.
         </Text>
       </View>
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Curso relacionado</Text>
+        <TextInput
+          placeholder="Pesquisar ou criar curso"
+          placeholderTextColor="#7D8597"
+          style={styles.searchInput}
+          value={courseSearch}
+          onChangeText={setCourseSearch}
+        />
+        <View style={styles.chipRow}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={handleAddCourse}>
+            <Text style={styles.secondaryButtonText}>Adicionar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.secondaryButton} onPress={handleEditCourse}>
+            <Text style={styles.secondaryButtonText}>Editar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.secondaryButton} onPress={handleDeleteCourse}>
+            <Text style={styles.secondaryButtonText}>Apagar</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.chipRow}>
+          {visibleCourses.map((course) => {
+            const isActive = course.id === selectedCourse;
+
+            return (
+              <TouchableOpacity
+                key={course.id}
+                style={[styles.chip, isActive && styles.chipActive]}
+                onPress={() => setSelectedCourse(course.id)}
+              >
+                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                  {course.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          {visibleCourses.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Nenhum curso encontrado</Text>
+              <Text style={styles.emptyText}>
+                Ajuste a busca do curso para filtrar as areas disponiveis.
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.savedSummaryCard}>
+          <Text style={styles.savedSummaryText}>{searchContextMessage}</Text>
+        </View>
+      </View>
+
+      {selectedCourseKnowledge ? (
+        <View style={styles.detailBodyCard}>
+          <Text style={styles.sectionTitle}>
+            Conhecimento de {selectedCourseKnowledge.courseLabel}
+          </Text>
+          <Text style={styles.detailBodyText}>{selectedCourseKnowledge.overview}</Text>
+          {selectedCourseKnowledge.suggestedPaths.map((item) => (
+            <Text key={item} style={styles.helperBullet}>
+              - {item}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.searchPanel}>
         <TextInput
-          placeholder="Digite um tema, materia ou palavra-chave"
+          placeholder="Digite um tema, curso ou palavra-chave"
           placeholderTextColor="#7D8597"
           style={styles.searchInput}
           value={query}
@@ -483,7 +556,7 @@ export function SearchScreen({
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.searchButton} onPress={handleApplySearch}>
-        <Text style={styles.searchButtonText}>Abrir tema pesquisado</Text>
+        <Text style={styles.searchButtonText}>Abrir pesquisa</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.secondaryButton} onPress={handleOpenDeepSearch}>
@@ -500,8 +573,8 @@ export function SearchScreen({
         <View style={styles.detailBodyCard}>
           <Text style={styles.sectionTitle}>Busca pronta para aplicar</Text>
           <Text style={styles.detailBodyText}>
-            O texto digitado, o modo selecionado ou os filtros ainda nao viraram a busca ativa.
-            Toque em Abrir tema pesquisado para puxar a analise com o recorte escolhido.
+            O texto digitado, o curso selecionado, o modo ou os filtros ainda nao viraram a busca
+            ativa. Toque em Abrir pesquisa para cruzar o tema com o curso escolhido.
           </Text>
         </View>
       ) : null}
@@ -788,66 +861,6 @@ export function SearchScreen({
             </View>
           ) : null}
         </>
-      ) : null}
-
-      <TextInput
-        placeholder="Procurar curso"
-        placeholderTextColor="#7D8597"
-        style={styles.searchInput}
-        value={courseSearch}
-        onChangeText={setCourseSearch}
-      />
-
-      <View style={styles.chipRow}>
-        <TouchableOpacity style={styles.secondaryButton} onPress={handleAddCourse}>
-          <Text style={styles.secondaryButtonText}>Adicionar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={handleEditCourse}>
-          <Text style={styles.secondaryButtonText}>Editar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={handleDeleteCourse}>
-          <Text style={styles.secondaryButtonText}>Apagar</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.chipRow}>
-        {visibleCourses.map((course) => {
-          const isActive = course.id === selectedCourse;
-
-          return (
-            <TouchableOpacity
-              key={course.id}
-              style={[styles.chip, isActive && styles.chipActive]}
-              onPress={() => setSelectedCourse(course.id)}
-            >
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                {course.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-        {visibleCourses.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Nenhum curso encontrado</Text>
-            <Text style={styles.emptyText}>
-              Ajuste a busca do curso para filtrar as areas disponiveis.
-            </Text>
-          </View>
-        ) : null}
-      </View>
-
-      {selectedCourseKnowledge ? (
-        <View style={styles.detailBodyCard}>
-          <Text style={styles.sectionTitle}>
-            Conhecimento de {selectedCourseKnowledge.courseLabel}
-          </Text>
-          <Text style={styles.detailBodyText}>{selectedCourseKnowledge.overview}</Text>
-          {selectedCourseKnowledge.suggestedPaths.map((item) => (
-            <Text key={item} style={styles.helperBullet}>
-              - {item}
-            </Text>
-          ))}
-        </View>
       ) : null}
 
       {appliedQuery ? (

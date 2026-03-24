@@ -219,6 +219,10 @@ export default function SearchRoute() {
   const relatedCourseLabel = useMemo(() => {
     const normalizedQuery = normalizeSearchTerm(appliedQuery);
 
+    if (appliedCourseLabel) {
+      return appliedCourseLabel;
+    }
+
     if (!normalizedQuery) {
       return appliedCourseLabel;
     }

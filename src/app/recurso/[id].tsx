@@ -45,7 +45,12 @@ type ApiStatus = {
 };
 
 export default function ResourceDetailRoute() {
-  const { id, focus } = useLocalSearchParams<{ id: string; focus?: string }>();
+  const { id, focus, query, course } = useLocalSearchParams<{
+    id: string;
+    focus?: string;
+    query?: string;
+    course?: string;
+  }>();
   const module = findResourceModuleById(id);
   const { addTask, customSummaries } = useStudy();
 
@@ -64,6 +69,8 @@ export default function ResourceDetailRoute() {
   const [selectedVideoId, setSelectedVideoId] = useState(videoLessons[0]?.id ?? '');
   const [selectedMethodId, setSelectedMethodId] = useState(studyMethods[0]?.id ?? '');
   const [selectedFormulaId, setSelectedFormulaId] = useState(formulaGuides[0]?.id ?? '');
+  const [selectedExamId, setSelectedExamId] = useState(simulatedExams[0]?.id ?? '');
+  const [selectedEnemId, setSelectedEnemId] = useState(enemTopics[0]?.id ?? '');
   const [videoGoal, setVideoGoal] = useState('');
   const [studyChallenge, setStudyChallenge] = useState('');
   const [formulaPractice, setFormulaPractice] = useState('');
@@ -114,6 +121,12 @@ export default function ResourceDetailRoute() {
     studyMethods.find((item) => item.id === selectedMethodId) ?? studyMethods[0];
   const selectedFormula =
     formulaGuides.find((item) => item.id === selectedFormulaId) ?? formulaGuides[0];
+  const selectedExam =
+    simulatedExams.find((item) => item.id === selectedExamId) ?? simulatedExams[0];
+  const selectedEnemTopic =
+    enemTopics.find((item) => item.id === selectedEnemId) ?? enemTopics[0];
+  const normalizedQuery = query?.trim() ?? '';
+  const normalizedCourse = course?.trim() ?? '';
   const formulaExamples: Record<string, string> = {
     bhaskara:
       'Use quando a equacao estiver no formato ax2 + bx + c = 0. Primeiro calcule o delta, depois substitua os valores e interprete quantas raizes existem.',
@@ -190,6 +203,16 @@ export default function ResourceDetailRoute() {
 
     if (id === 'formulas' && formulaGuides.some((item) => item.id === normalizedFocus)) {
       setSelectedFormulaId(normalizedFocus);
+      return;
+    }
+
+    if (id === 'simulados' && simulatedExams.some((item) => item.id === normalizedFocus)) {
+      setSelectedExamId(normalizedFocus);
+      return;
+    }
+
+    if (id === 'enem' && enemTopics.some((item) => item.id === normalizedFocus)) {
+      setSelectedEnemId(normalizedFocus);
     }
   }, [focus, id]);
 
@@ -427,6 +450,18 @@ export default function ResourceDetailRoute() {
         <Text style={styles.detailDescription}>{module.summary}</Text>
       </View>
 
+      {(normalizedQuery || normalizedCourse) ? (
+        <View style={styles.savedSummaryCard}>
+          <Text style={styles.savedSummaryText}>
+            {normalizedCourse && normalizedQuery
+              ? `Aberto a partir da pesquisa por "${normalizedQuery}" no contexto do curso ${normalizedCourse}.`
+              : normalizedQuery
+                ? `Aberto a partir da pesquisa por "${normalizedQuery}".`
+                : `Aberto no contexto do curso ${normalizedCourse}.`}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.detailBodyCard}>
         <Text style={styles.sectionTitle}>Como esse modulo entra no app</Text>
         <Text style={styles.detailBodyText}>
@@ -504,51 +539,122 @@ export default function ResourceDetailRoute() {
       )}
 
       {id === 'simulados' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Simulados disponiveis</Text>
-          {simulatedExams.map((exam) => (
-            <View key={exam.id} style={styles.articleCard}>
-              <Text style={styles.articleCategory}>{exam.course}</Text>
-              <Text style={styles.articleTitle}>{exam.title}</Text>
-              <Text style={styles.articleDescription}>{exam.focus}</Text>
-              <Text style={styles.toolText}>{exam.questionCount}</Text>
+        <>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Simulados disponiveis</Text>
+            {simulatedExams.map((exam) => (
               <TouchableOpacity
-                style={styles.secondaryButton}
+                key={exam.id}
+                style={[
+                  styles.articleCard,
+                  exam.id === selectedExamId && styles.articleCardActive,
+                ]}
                 onPress={() => {
-                  addTask(`Fazer ${exam.title}`);
-                  setFeedbackMessage(`Simulado "${exam.title}" adicionado na lista de tarefas.`);
+                  setSelectedExamId(exam.id);
+                  setFeedbackMessage(`Simulado "${exam.title}" selecionado.`);
                 }}
               >
-                <Text style={styles.secondaryButtonText}>Adicionar a agenda</Text>
+                <Text style={styles.articleCategory}>{exam.course}</Text>
+                <Text style={styles.articleTitle}>{exam.title}</Text>
+                <Text style={styles.articleDescription}>{exam.focus}</Text>
+                <Text style={styles.toolText}>{exam.questionCount}</Text>
               </TouchableOpacity>
+            ))}
+          </View>
+
+          {selectedExam ? (
+            <View style={styles.formCard}>
+              <Text style={styles.formLabel}>Simulado relacionado aberto</Text>
+              <Text style={styles.detailBodyText}>
+                {selectedExam.title} foi ligado a esta pesquisa para voce continuar o estudo com mais contexto.
+              </Text>
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={[styles.searchButton, styles.controlButton]}
+                  onPress={() => {
+                    addTask(`Fazer ${selectedExam.title}`);
+                    setFeedbackMessage(`Simulado "${selectedExam.title}" adicionado na lista de tarefas.`);
+                  }}
+                >
+                  <Text style={styles.searchButtonText}>Adicionar a agenda</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, styles.controlButton]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/pesquisar',
+                      params: {
+                        query: selectedExam.title,
+                        course: selectedExam.course.toLowerCase(),
+                      },
+                    })
+                  }
+                >
+                  <Text style={styles.secondaryButtonText}>Buscar relacionados</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          ))}
-        </View>
+          ) : null}
+        </>
       )}
 
       {id === 'enem' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Mapa do ENEM</Text>
-          {enemTopics.map((topic) => (
-            <View key={topic.id} style={styles.toolItem}>
-              <Text style={styles.toolTitle}>
-                {topic.subject} | {topic.branch}
-              </Text>
-              <Text style={styles.toolText}>{topic.summary}</Text>
+        <>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Mapa do ENEM</Text>
+            {enemTopics.map((topic) => (
               <TouchableOpacity
-                style={styles.secondaryButton}
+                key={topic.id}
+                style={[
+                  styles.toolItem,
+                  topic.id === selectedEnemId && styles.articleCardActive,
+                ]}
                 onPress={() => {
-                  addTask(`Revisar ${topic.subject}: ${topic.branch}`);
-                  setFeedbackMessage(
-                    `Topico "${topic.subject} | ${topic.branch}" enviado para sua lista de tarefas.`
-                  );
+                  setSelectedEnemId(topic.id);
+                  setFeedbackMessage(`Topico "${topic.subject} | ${topic.branch}" selecionado.`);
                 }}
               >
-                <Text style={styles.secondaryButtonText}>Marcar revisao</Text>
+                <Text style={styles.toolTitle}>
+                  {topic.subject} | {topic.branch}
+                </Text>
+                <Text style={styles.toolText}>{topic.summary}</Text>
               </TouchableOpacity>
+            ))}
+          </View>
+
+          {selectedEnemTopic ? (
+            <View style={styles.formCard}>
+              <Text style={styles.formLabel}>Topico relacionado aberto</Text>
+              <Text style={styles.detailBodyText}>{selectedEnemTopic.summary}</Text>
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={[styles.searchButton, styles.controlButton]}
+                  onPress={() => {
+                    addTask(`Revisar ${selectedEnemTopic.subject}: ${selectedEnemTopic.branch}`);
+                    setFeedbackMessage(
+                      `Topico "${selectedEnemTopic.subject} | ${selectedEnemTopic.branch}" enviado para sua lista de tarefas.`
+                    );
+                  }}
+                >
+                  <Text style={styles.searchButtonText}>Marcar revisao</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, styles.controlButton]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/pesquisar',
+                      params: {
+                        query: `${selectedEnemTopic.subject} ${selectedEnemTopic.branch}`,
+                      },
+                    })
+                  }
+                >
+                  <Text style={styles.secondaryButtonText}>Buscar relacionados</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          ))}
-        </View>
+          ) : null}
+        </>
       )}
 
       {id === 'videoaulas' && (

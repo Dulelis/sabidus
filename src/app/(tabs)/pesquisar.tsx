@@ -456,7 +456,12 @@ export default function SearchRoute() {
           badge: 'Videoaula',
           routeType: 'resource',
           routeId: 'videoaulas',
-          routeParams: { id: 'videoaulas', focus: video.id },
+          routeParams: {
+            id: 'videoaulas',
+            focus: video.id,
+            query: appliedQuery,
+            course: contextCourseLabel,
+          },
           score,
         });
       }
@@ -474,6 +479,11 @@ export default function SearchRoute() {
           badge: 'Recurso',
           routeType: 'resource',
           routeId: resource.id,
+          routeParams: {
+            id: resource.id,
+            query: appliedQuery,
+            course: contextCourseLabel,
+          },
           score,
         });
       }
@@ -519,7 +529,12 @@ export default function SearchRoute() {
           badge: 'Metodo',
           routeType: 'resource',
           routeId: 'metodos-estudo',
-          routeParams: { id: 'metodos-estudo', focus: method.id },
+          routeParams: {
+            id: 'metodos-estudo',
+            focus: method.id,
+            query: appliedQuery,
+            course: contextCourseLabel,
+          },
           score,
         });
       }
@@ -539,7 +554,12 @@ export default function SearchRoute() {
           badge: 'Formula',
           routeType: 'resource',
           routeId: 'formulas',
-          routeParams: { id: 'formulas', focus: formula.id },
+          routeParams: {
+            id: 'formulas',
+            focus: formula.id,
+            query: appliedQuery,
+            course: contextCourseLabel,
+          },
           score,
         });
       }
@@ -559,6 +579,12 @@ export default function SearchRoute() {
           badge: 'ENEM',
           routeType: 'resource',
           routeId: 'enem',
+          routeParams: {
+            id: 'enem',
+            focus: topic.id,
+            query: appliedQuery,
+            course: contextCourseLabel,
+          },
           score,
         });
       }
@@ -579,6 +605,12 @@ export default function SearchRoute() {
           badge: 'Simulado',
           routeType: 'resource',
           routeId: 'simulados',
+          routeParams: {
+            id: 'simulados',
+            focus: exam.id,
+            query: appliedQuery,
+            course: contextCourseLabel,
+          },
           score,
         });
       }

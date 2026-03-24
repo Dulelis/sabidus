@@ -250,12 +250,31 @@ function decodeHtmlEntities(value) {
     .replace(/&gt;/gi, '>');
 }
 
+function looksPollutedSnippet(value) {
+  const normalizedValue = (value || '').trim();
+
+  return (
+    !normalizedValue ||
+    normalizedValue.includes('\\"') ||
+    /"\s*,\s*"/.test(normalizedValue) ||
+    /"\s*:\s*"/.test(normalizedValue) ||
+    /\b(summary|whyItMatters|keyTopics|studyQuestions|tips|nextSteps)\b/i.test(normalizedValue)
+  );
+}
+
+function buildFallbackSnippet(theme, domain = '') {
+  return truncateText(
+    `Fonte localizada na web sobre ${theme}${domain ? ` em ${domain}` : ''}. Abra o resultado para ler e conferir o conteudo original.`,
+    220
+  );
+}
+
 function extractHtmlTagValue(html, pattern) {
   const match = html.match(pattern);
   return match?.[1] ? decodeHtmlEntities(match[1].trim()) : '';
 }
 
-async function enrichGroundedSource(source) {
+async function enrichGroundedSource(source, theme) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 7000);
 
@@ -270,10 +289,13 @@ async function enrichGroundedSource(source) {
     });
 
     const finalUrl = response.url || source.url;
-    const domain = formatSourceDomain(finalUrl) || source.domain;
+    const domain =
+      formatSourceDomain(finalUrl) ||
+      source.domain ||
+      (looksLikeDomain(source.title) ? source.title : '');
     const contentType = response.headers.get('content-type') || '';
     let title = source.title;
-    let snippet = source.snippet;
+    let snippet = looksPollutedSnippet(source.snippet) ? '' : source.snippet;
 
     if (/text\/html/i.test(contentType)) {
       const html = await response.text();
@@ -308,18 +330,14 @@ async function enrichGroundedSource(source) {
       title,
       url: finalUrl,
       domain: domain || source.domain,
-      snippet:
-        snippet ||
-        'Resultado localizado pela busca na web para leitura e aprofundamento do tema pesquisado.',
+      snippet: snippet || buildFallbackSnippet(theme, domain || source.domain),
     };
   } catch {
     return {
       title: source.title,
       url: source.url,
-      domain: source.domain,
-      snippet:
-        source.snippet ||
-        'Resultado localizado pela busca na web para leitura e aprofundamento do tema pesquisado.',
+      domain: source.domain || (looksLikeDomain(source.title) ? source.title : ''),
+      snippet: buildFallbackSnippet(theme, source.domain),
     };
   } finally {
     clearTimeout(timeout);
@@ -340,34 +358,50 @@ function matchesDomain(hostname, domainPattern) {
   return hostname === normalizedPattern || hostname.endsWith(`.${normalizedPattern}`);
 }
 
-function isBlockedSource(url, profile) {
+function isBlockedSource(url, profile, fallbackDomain = '') {
   const normalizedUrl = url.toLowerCase();
+  const normalizedFallbackDomain = fallbackDomain.toLowerCase();
 
-  return profile.blockedPatterns.some((pattern) => normalizedUrl.includes(pattern));
+  return profile.blockedPatterns.some(
+    (pattern) =>
+      normalizedUrl.includes(pattern) || normalizedFallbackDomain.includes(pattern.toLowerCase())
+  );
 }
 
-function isAllowedSource(url, profile) {
+function isAllowedSource(url, profile, fallbackDomain = '') {
   if (!profile.allowedDomains.length) {
     return true;
   }
 
   const hostname = parseHostname(url);
+  const normalizedFallbackDomain = fallbackDomain.toLowerCase();
 
-  return profile.allowedDomains.some((domainPattern) => matchesDomain(hostname, domainPattern));
+  return profile.allowedDomains.some(
+    (domainPattern) =>
+      matchesDomain(hostname, domainPattern) ||
+      matchesDomain(normalizedFallbackDomain, domainPattern)
+  );
 }
 
-function getPriorityScore(url, profile) {
+function getPriorityScore(url, profile, fallbackDomain = '') {
   const hostname = parseHostname(url);
+  const normalizedFallbackDomain = fallbackDomain.toLowerCase();
   let score = 0;
 
   for (const domainPattern of profile.priorityDomains) {
-    if (matchesDomain(hostname, domainPattern)) {
+    if (
+      matchesDomain(hostname, domainPattern) ||
+      matchesDomain(normalizedFallbackDomain, domainPattern)
+    ) {
       score += 5;
     }
   }
 
   for (const domainPattern of profile.allowedDomains) {
-    if (matchesDomain(hostname, domainPattern)) {
+    if (
+      matchesDomain(hostname, domainPattern) ||
+      matchesDomain(normalizedFallbackDomain, domainPattern)
+    ) {
       score += 1;
     }
   }
@@ -379,7 +413,7 @@ function getPriorityScore(url, profile) {
   return score;
 }
 
-async function buildGroundedSources(groundingMetadata, discoveryProfile) {
+async function buildGroundedSources(groundingMetadata, discoveryProfile, theme) {
   const chunks = Array.isArray(groundingMetadata?.groundingChunks)
     ? groundingMetadata.groundingChunks
     : [];
@@ -435,30 +469,28 @@ async function buildGroundedSources(groundingMetadata, discoveryProfile) {
   const rawSources = Array.from(sourceMap.values()).map((source) => ({
     title: source.title,
     url: source.url,
-    domain: source.domain,
-    snippet:
-      truncateText(Array.from(source.snippets).join(' '), 320) ||
-      'Trecho localizado na web sobre o tema pesquisado.',
+    domain: source.domain || (looksLikeDomain(source.title) ? source.title : ''),
+    snippet: '',
   }));
   const enrichedResults = await Promise.allSettled(
-    rawSources.slice(0, 16).map((source) => enrichGroundedSource(source))
+    rawSources.slice(0, 16).map((source) => enrichGroundedSource(source, theme))
   );
   const uniqueSources = enrichedResults.map((result, index) =>
     result.status === 'fulfilled' ? result.value : rawSources[index]
   );
 
   const filteredSources = uniqueSources
-    .filter((source) => !isBlockedSource(source.url, discoveryProfile))
-    .filter((source) => isAllowedSource(source.url, discoveryProfile))
+    .filter((source) => !isBlockedSource(source.url, discoveryProfile, source.domain))
+    .filter((source) => isAllowedSource(source.url, discoveryProfile, source.domain))
     .sort((first, second) =>
-      getPriorityScore(second.url, discoveryProfile) -
-      getPriorityScore(first.url, discoveryProfile)
+      getPriorityScore(second.url, discoveryProfile, second.domain) -
+      getPriorityScore(first.url, discoveryProfile, first.domain)
     );
   const fallbackSources = uniqueSources
-    .filter((source) => !isBlockedSource(source.url, discoveryProfile))
+    .filter((source) => !isBlockedSource(source.url, discoveryProfile, source.domain))
     .sort((first, second) =>
-      getPriorityScore(second.url, discoveryProfile) -
-      getPriorityScore(first.url, discoveryProfile)
+      getPriorityScore(second.url, discoveryProfile, second.domain) -
+      getPriorityScore(first.url, discoveryProfile, first.domain)
     );
 
   return filteredSources.length > 0 ? filteredSources : fallbackSources;
@@ -710,7 +742,11 @@ Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao inform
     const { outputText, groundingMetadata } = await runGroundedJsonPrompt(prompt);
     const parsed = parseModelJson(outputText, 'Deep search route');
 
-    const finalSources = await buildGroundedSources(groundingMetadata, discoveryProfile);
+    const finalSources = await buildGroundedSources(
+      groundingMetadata,
+      discoveryProfile,
+      normalizedTheme
+    );
     const videoSources = finalSources.filter((source) =>
       /youtube|youtu\.be|vimeo|video/i.test(source.url)
     );

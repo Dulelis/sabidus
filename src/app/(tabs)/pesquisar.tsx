@@ -670,6 +670,88 @@ export default function SearchRoute() {
       }
     }
 
+    if (themeInsight) {
+      for (const source of themeInsight.sources) {
+        const score =
+          scoreContent(
+            queryText,
+            source.title,
+            source.snippet,
+            source.domain,
+            source.url,
+            contextCourseLabel
+          ) + 10;
+
+        if (score > 0) {
+          results.push({
+            id: `web-source-${source.url}`,
+            title: source.title,
+            subtitle: source.domain || 'Fonte web',
+            description: source.snippet,
+            badge:
+              appliedMode === 'scientific-articles'
+                ? 'Artigo web'
+                : appliedMode === 'academic-research'
+                  ? 'Pesquisa web'
+                  : 'Fonte web',
+            routeType: 'web-result',
+            routeUrl: source.url,
+            routeParams: {
+              title: source.title,
+              url: source.url,
+              snippet: source.snippet,
+              domain: source.domain,
+              badge:
+                appliedMode === 'scientific-articles'
+                  ? 'Artigo web'
+                  : appliedMode === 'academic-research'
+                    ? 'Pesquisa web'
+                    : 'Fonte web',
+              theme: appliedQuery,
+              course: contextCourseLabel,
+            },
+            sourceDomain: source.domain,
+            score,
+          });
+        }
+      }
+
+      for (const video of themeInsight.videos) {
+        const score =
+          scoreContent(
+            queryText,
+            video.title,
+            video.snippet,
+            video.domain,
+            video.url,
+            contextCourseLabel
+          ) + 9;
+
+        if (score > 0) {
+          results.push({
+            id: `web-video-${video.url}`,
+            title: video.title,
+            subtitle: video.domain || 'Video na web',
+            description: video.snippet,
+            badge: 'Video web',
+            routeType: 'web-result',
+            routeUrl: video.url,
+            routeParams: {
+              title: video.title,
+              url: video.url,
+              snippet: video.snippet,
+              domain: video.domain,
+              badge: 'Video web',
+              theme: appliedQuery,
+              course: contextCourseLabel,
+            },
+            sourceDomain: video.domain,
+            score,
+          });
+        }
+      }
+    }
+
     const uniqueResults = [];
     const seenIds = new Set();
 
@@ -696,6 +778,7 @@ export default function SearchRoute() {
     relatedCourseLabel,
     relatedVideos,
     studyMaterials,
+    themeInsight,
   ]);
 
   function toggleFilter(filterId: string) {

@@ -81,10 +81,14 @@ export type DeepSearchResponse = {
   sources: Array<{
     title: string;
     url: string;
+    snippet: string;
+    domain: string;
   }>;
   videos: Array<{
     title: string;
     url: string;
+    snippet: string;
+    domain: string;
   }>;
 };
 

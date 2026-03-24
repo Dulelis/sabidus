@@ -509,6 +509,11 @@ export const styles = StyleSheet.create({
     color: '#0F766E',
     marginTop: 4,
   },
+  sourceSnippet: {
+    color: '#14532D',
+    marginTop: 10,
+    lineHeight: 20,
+  },
   agendaCard: {
     backgroundColor: '#ECFDF5',
     borderRadius: 24,

@@ -165,8 +165,9 @@ export type UnifiedSearchResult = {
   subtitle: string;
   description: string;
   badge: string;
-  routeType: 'article' | 'resource' | 'tab' | 'external' | 'none';
+  routeType: 'article' | 'resource' | 'tab' | 'external' | 'web-result' | 'none';
   routeId?: string;
   routeParams?: Record<string, string>;
   routeUrl?: string;
+  sourceDomain?: string;
 };

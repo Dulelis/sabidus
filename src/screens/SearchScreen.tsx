@@ -108,6 +108,35 @@ export function SearchScreen({
     selectedCourse === 'todos'
       ? ''
       : courseCatalog.find((course) => course.id === selectedCourse)?.label || '';
+  const webFindings = useMemo(() => {
+    if (!themeInsight) {
+      return [];
+    }
+
+    const sourceBadge =
+      appliedMode === 'scientific-articles'
+        ? 'Artigo web'
+        : appliedMode === 'academic-research'
+          ? 'Pesquisa web'
+          : 'Fonte web';
+
+    return [
+      ...themeInsight.sources.map((source) => ({
+        badge: sourceBadge,
+        domain: source.domain,
+        snippet: source.snippet,
+        title: source.title,
+        url: source.url,
+      })),
+      ...themeInsight.videos.map((video) => ({
+        badge: 'Video web',
+        domain: video.domain,
+        snippet: video.snippet,
+        title: video.title,
+        url: video.url,
+      })),
+    ];
+  }, [appliedMode, themeInsight]);
   const selectedCourseKnowledge = courseKnowledge.find(
     (item) =>
       item.courseId === selectedCourse ||
@@ -223,6 +252,22 @@ export function SearchScreen({
       return;
     }
 
+    if (result.routeType === 'web-result' && result.routeUrl) {
+      router.push({
+        pathname: '/resultado-web' as never,
+        params: result.routeParams ?? {
+          title: result.title,
+          url: result.routeUrl,
+          snippet: result.description,
+          domain: result.sourceDomain || '',
+          badge: result.badge,
+          theme: appliedQuery,
+          course: relatedCourseLabel || selectedCourseLabel,
+        },
+      } as never);
+      return;
+    }
+
     if (result.routeType === 'resource' && result.routeId) {
       if (result.routeParams?.id) {
         const resourceParams = result.routeParams as Record<string, string> & { id: string };
@@ -329,6 +374,27 @@ export function SearchScreen({
     }).catch(() => {
       setMaterialFeedback('Nao foi possivel abrir a impressao agora.');
     });
+  }
+
+  function openWebFinding(item: {
+    badge: string;
+    domain: string;
+    snippet: string;
+    title: string;
+    url: string;
+  }) {
+    router.push({
+      pathname: '/resultado-web' as never,
+      params: {
+        title: item.title,
+        url: item.url,
+        snippet: item.snippet,
+        domain: item.domain,
+        badge: item.badge,
+        theme: appliedQuery,
+        course: relatedCourseLabel || selectedCourseLabel,
+      },
+    } as never);
   }
 
   return (
@@ -553,11 +619,29 @@ export function SearchScreen({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{appliedDiscoveryProfile.sourcesTitle}</Text>
             {themeInsight.sources.length > 0 ? (
-              themeInsight.sources.slice(0, 4).map((source) => (
+              themeInsight.sources.map((source) => (
                 <View key={source.url} style={styles.sourceItem}>
                   <Text style={styles.sourceName}>{source.title}</Text>
-                  <Text style={styles.sourceType}>{source.url}</Text>
+                  <Text style={styles.sourceType}>{source.domain || source.url}</Text>
+                  <Text style={styles.sourceSnippet}>{source.snippet}</Text>
                   <View style={styles.itemActionRow}>
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, styles.compactControlButton]}
+                      onPress={() => openWebFinding({
+                        badge:
+                          appliedMode === 'scientific-articles'
+                            ? 'Artigo web'
+                            : appliedMode === 'academic-research'
+                              ? 'Pesquisa web'
+                              : 'Fonte web',
+                        domain: source.domain,
+                        snippet: source.snippet,
+                        title: source.title,
+                        url: source.url,
+                      })}
+                    >
+                      <Text style={styles.secondaryButtonText}>Ler</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.secondaryButton, styles.compactControlButton]}
                       onPress={() => {
@@ -570,7 +654,7 @@ export function SearchScreen({
                         });
                       }}
                     >
-                      <Text style={styles.secondaryButtonText}>Abrir</Text>
+                      <Text style={styles.secondaryButtonText}>Origem</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.searchButton, styles.compactControlButton]}
@@ -602,8 +686,23 @@ export function SearchScreen({
               {themeInsight.videos.map((video) => (
                 <View key={video.url} style={styles.sourceItem}>
                   <Text style={styles.sourceName}>{video.title}</Text>
-                  <Text style={styles.sourceType}>{video.url}</Text>
+                  <Text style={styles.sourceType}>{video.domain || video.url}</Text>
+                  <Text style={styles.sourceSnippet}>{video.snippet}</Text>
                   <View style={styles.itemActionRow}>
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, styles.compactControlButton]}
+                      onPress={() =>
+                        openWebFinding({
+                          badge: 'Video web',
+                          domain: video.domain,
+                          snippet: video.snippet,
+                          title: video.title,
+                          url: video.url,
+                        })
+                      }
+                    >
+                      <Text style={styles.secondaryButtonText}>Ler</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.secondaryButton, styles.compactControlButton]}
                       onPress={() => {
@@ -616,7 +715,7 @@ export function SearchScreen({
                         });
                       }}
                     >
-                      <Text style={styles.secondaryButtonText}>Abrir</Text>
+                      <Text style={styles.secondaryButtonText}>Origem</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.searchButton, styles.compactControlButton]}
@@ -625,6 +724,59 @@ export function SearchScreen({
                           kind: 'link',
                           title: video.title,
                           url: video.url,
+                        })
+                      }
+                    >
+                      <Text style={styles.searchButtonText}>Gravar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {webFindings.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Resultados encontrados na web</Text>
+              <View style={styles.savedSummaryCard}>
+                <Text style={styles.savedSummaryText}>
+                  {webFindings.length} resultados reais encontrados para "{appliedQuery}". Toque em
+                  Ler para abrir um resumo legivel no app ou em Origem para abrir o link original.
+                </Text>
+              </View>
+              {webFindings.map((item) => (
+                <View key={`${item.badge}-${item.url}`} style={styles.articleCard}>
+                  <Text style={styles.articleCategory}>{item.badge}</Text>
+                  <Text style={styles.articleTitle}>{item.title}</Text>
+                  <Text style={styles.toolText}>{item.domain || item.url}</Text>
+                  <Text style={styles.articleDescription}>{item.snippet}</Text>
+                  <View style={styles.itemActionRow}>
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, styles.compactControlButton]}
+                      onPress={() => openWebFinding(item)}
+                    >
+                      <Text style={styles.secondaryButtonText}>Ler</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, styles.compactControlButton]}
+                      onPress={() => {
+                        void openStudyMaterialUrl(item.url).catch((error) => {
+                          setMaterialFeedback(
+                            error instanceof Error
+                              ? error.message
+                              : 'Nao foi possivel abrir esse link agora.'
+                          );
+                        });
+                      }}
+                    >
+                      <Text style={styles.secondaryButtonText}>Origem</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.searchButton, styles.compactControlButton]}
+                      onPress={() =>
+                        handleSaveExternalMaterial({
+                          title: item.title,
+                          url: item.url,
                         })
                       }
                     >

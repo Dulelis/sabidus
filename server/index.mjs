@@ -212,6 +212,30 @@ function parseHostname(url) {
   }
 }
 
+function formatSourceDomain(url) {
+  const hostname = parseHostname(url);
+
+  if (!hostname) {
+    return '';
+  }
+
+  return hostname.replace(/^www\./, '');
+}
+
+function truncateText(value, limit = 260) {
+  const normalizedValue = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+
+  if (!normalizedValue) {
+    return '';
+  }
+
+  if (normalizedValue.length <= limit) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, limit - 1).trim()}...`;
+}
+
 function matchesDomain(hostname, domainPattern) {
   const normalizedPattern = domainPattern.toLowerCase();
 
@@ -263,6 +287,85 @@ function getPriorityScore(url, profile) {
   }
 
   return score;
+}
+
+function buildGroundedSources(groundingMetadata, discoveryProfile) {
+  const chunks = Array.isArray(groundingMetadata?.groundingChunks)
+    ? groundingMetadata.groundingChunks
+    : [];
+  const supports = Array.isArray(groundingMetadata?.groundingSupports)
+    ? groundingMetadata.groundingSupports
+    : [];
+  const sourceMap = new Map();
+
+  for (const chunk of chunks) {
+    const uri = chunk?.web?.uri?.trim();
+    const title = chunk?.web?.title?.trim();
+
+    if (!uri || sourceMap.has(uri)) {
+      continue;
+    }
+
+    sourceMap.set(uri, {
+      title: title || uri,
+      url: uri,
+      domain: formatSourceDomain(uri),
+      snippets: new Set(),
+    });
+  }
+
+  for (const support of supports) {
+    const snippet = truncateText(support?.segment?.text);
+    const chunkIndices = Array.isArray(support?.groundingChunkIndices)
+      ? support.groundingChunkIndices
+      : [];
+
+    if (!snippet || chunkIndices.length === 0) {
+      continue;
+    }
+
+    for (const chunkIndex of chunkIndices) {
+      const groundedChunk = chunks?.[chunkIndex];
+      const uri = groundedChunk?.web?.uri?.trim();
+
+      if (!uri) {
+        continue;
+      }
+
+      const source = sourceMap.get(uri);
+
+      if (!source) {
+        continue;
+      }
+
+      source.snippets.add(snippet);
+    }
+  }
+
+  const uniqueSources = Array.from(sourceMap.values()).map((source) => ({
+    title: source.title,
+    url: source.url,
+    domain: source.domain,
+    snippet:
+      truncateText(Array.from(source.snippets).join(' '), 320) ||
+      'Trecho localizado na web sobre o tema pesquisado.',
+  }));
+
+  const filteredSources = uniqueSources
+    .filter((source) => !isBlockedSource(source.url, discoveryProfile))
+    .filter((source) => isAllowedSource(source.url, discoveryProfile))
+    .sort((first, second) =>
+      getPriorityScore(second.url, discoveryProfile) -
+      getPriorityScore(first.url, discoveryProfile)
+    );
+  const fallbackSources = uniqueSources
+    .filter((source) => !isBlockedSource(source.url, discoveryProfile))
+    .sort((first, second) =>
+      getPriorityScore(second.url, discoveryProfile) -
+      getPriorityScore(first.url, discoveryProfile)
+    );
+
+  return filteredSources.length > 0 ? filteredSources : fallbackSources;
 }
 
 function getLatestAppVersion() {
@@ -343,9 +446,6 @@ async function runGroundedJsonPrompt(prompt) {
           google_search: {},
         },
       ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
     }),
   });
 
@@ -514,41 +614,7 @@ Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao inform
     const { outputText, groundingMetadata } = await runGroundedJsonPrompt(prompt);
     const parsed = parseModelJson(outputText, 'Deep search route');
 
-    const chunks = Array.isArray(groundingMetadata?.groundingChunks)
-      ? groundingMetadata.groundingChunks
-      : [];
-    const uniqueSources = [];
-    const seenUris = new Set();
-
-    for (const chunk of chunks) {
-      const uri = chunk?.web?.uri?.trim();
-      const title = chunk?.web?.title?.trim();
-
-      if (!uri || seenUris.has(uri)) {
-        continue;
-      }
-
-      seenUris.add(uri);
-      uniqueSources.push({
-        title: title || uri,
-        url: uri,
-      });
-    }
-
-    const filteredSources = uniqueSources
-      .filter((source) => !isBlockedSource(source.url, discoveryProfile))
-      .filter((source) => isAllowedSource(source.url, discoveryProfile))
-      .sort((first, second) =>
-        getPriorityScore(second.url, discoveryProfile) -
-        getPriorityScore(first.url, discoveryProfile)
-      );
-    const fallbackSources = uniqueSources
-      .filter((source) => !isBlockedSource(source.url, discoveryProfile))
-      .sort((first, second) =>
-        getPriorityScore(second.url, discoveryProfile) -
-        getPriorityScore(first.url, discoveryProfile)
-      );
-    const finalSources = filteredSources.length > 0 ? filteredSources : fallbackSources;
+    const finalSources = buildGroundedSources(groundingMetadata, discoveryProfile);
     const videoSources = finalSources.filter((source) =>
       /youtube|youtu\.be|vimeo|video/i.test(source.url)
     );
@@ -568,8 +634,8 @@ Termos relacionados do curso: ${normalizedRelatedTerms.join('; ') || 'nao inform
       nextSteps: normalizeStringList(parsed.nextSteps, 3),
       studyQuestions: normalizeStringList(parsed.studyQuestions, 4),
       webSearchQueries: mergedQueries,
-      sources: finalSources.slice(0, 10),
-      videos: videoSources.slice(0, 6),
+      sources: finalSources.slice(0, 16),
+      videos: videoSources.slice(0, 10),
     });
   } catch (error) {
     res.status(500).json({

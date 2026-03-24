@@ -111,6 +111,27 @@ export default function DeepSearchRoute() {
     setFeedbackMessage(`Material "${createdMaterial.title}" salvo na biblioteca do app.`);
   }
 
+  function openWebResult(item: {
+    badge: string;
+    domain: string;
+    snippet: string;
+    title: string;
+    url: string;
+  }) {
+    router.push({
+      pathname: '/resultado-web' as never,
+      params: {
+        title: item.title,
+        url: item.url,
+        snippet: item.snippet,
+        domain: item.domain,
+        badge: item.badge,
+        theme: theme.trim(),
+        course: course.trim(),
+      },
+    } as never);
+  }
+
   return (
     <ScreenLayout>
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -223,8 +244,28 @@ export default function DeepSearchRoute() {
             {result.sources.map((source) => (
               <View key={source.url} style={styles.sourceItem}>
                 <Text style={styles.sourceName}>{source.title}</Text>
-                <Text style={styles.sourceType}>{source.url}</Text>
+                <Text style={styles.sourceType}>{source.domain || source.url}</Text>
+                <Text style={styles.sourceSnippet}>{source.snippet}</Text>
                 <View style={styles.itemActionRow}>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, styles.compactControlButton]}
+                    onPress={() =>
+                      openWebResult({
+                        badge:
+                          mode === 'scientific-articles'
+                            ? 'Artigo web'
+                            : mode === 'academic-research'
+                              ? 'Pesquisa web'
+                              : 'Fonte web',
+                        domain: source.domain,
+                        snippet: source.snippet,
+                        title: source.title,
+                        url: source.url,
+                      })
+                    }
+                  >
+                    <Text style={styles.secondaryButtonText}>Ler</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.secondaryButton, styles.compactControlButton]}
                     onPress={() => {
@@ -237,7 +278,7 @@ export default function DeepSearchRoute() {
                       });
                     }}
                   >
-                    <Text style={styles.secondaryButtonText}>Abrir</Text>
+                    <Text style={styles.secondaryButtonText}>Origem</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.searchButton, styles.compactControlButton]}
@@ -261,8 +302,23 @@ export default function DeepSearchRoute() {
               result.videos.map((video) => (
                 <View key={video.url} style={styles.sourceItem}>
                   <Text style={styles.sourceName}>{video.title}</Text>
-                  <Text style={styles.sourceType}>{video.url}</Text>
+                  <Text style={styles.sourceType}>{video.domain || video.url}</Text>
+                  <Text style={styles.sourceSnippet}>{video.snippet}</Text>
                   <View style={styles.itemActionRow}>
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, styles.compactControlButton]}
+                      onPress={() =>
+                        openWebResult({
+                          badge: 'Video web',
+                          domain: video.domain,
+                          snippet: video.snippet,
+                          title: video.title,
+                          url: video.url,
+                        })
+                      }
+                    >
+                      <Text style={styles.secondaryButtonText}>Ler</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.secondaryButton, styles.compactControlButton]}
                       onPress={() => {
@@ -275,7 +331,7 @@ export default function DeepSearchRoute() {
                         });
                       }}
                     >
-                      <Text style={styles.secondaryButtonText}>Abrir</Text>
+                      <Text style={styles.secondaryButtonText}>Origem</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.searchButton, styles.compactControlButton]}

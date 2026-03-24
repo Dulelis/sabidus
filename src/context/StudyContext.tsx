@@ -76,7 +76,7 @@ type StudyContextValue = {
   addCalendarItem: (item: {
     title: string;
     subject: string;
-    type: 'Prova' | 'Trabalho';
+    type: 'Prova' | 'Trabalho' | 'Estudo';
     dueDate: string;
   }) => AssessmentItem | null;
   updateCalendarItem: (
@@ -84,7 +84,7 @@ type StudyContextValue = {
     item: {
       title: string;
       subject: string;
-      type: 'Prova' | 'Trabalho';
+      type: 'Prova' | 'Trabalho' | 'Estudo';
       dueDate: string;
     }
   ) => AssessmentItem | null;
@@ -643,14 +643,15 @@ export function StudyProvider({ children }: PropsWithChildren) {
   function addCalendarItem(item: {
     title: string;
     subject: string;
-    type: 'Prova' | 'Trabalho';
+    type: 'Prova' | 'Trabalho' | 'Estudo';
     dueDate: string;
   }) {
     if (!item.title.trim() || !item.subject.trim() || !item.dueDate.trim()) {
       return null;
     }
 
-    const color = item.type === 'Prova' ? '#2563EB' : '#EA580C';
+    const color =
+      item.type === 'Prova' ? '#2563EB' : item.type === 'Trabalho' ? '#EA580C' : '#0F766E';
     const createdItem = {
       id: `custom-${Date.now()}`,
       title: item.title.trim(),
@@ -670,7 +671,7 @@ export function StudyProvider({ children }: PropsWithChildren) {
     item: {
       title: string;
       subject: string;
-      type: 'Prova' | 'Trabalho';
+      type: 'Prova' | 'Trabalho' | 'Estudo';
       dueDate: string;
     }
   ) {
@@ -684,7 +685,8 @@ export function StudyProvider({ children }: PropsWithChildren) {
       subject: item.subject.trim(),
       type: item.type,
       dueDate: item.dueDate.trim(),
-      color: item.type === 'Prova' ? '#2563EB' : '#EA580C',
+      color:
+        item.type === 'Prova' ? '#2563EB' : item.type === 'Trabalho' ? '#EA580C' : '#0F766E',
     } satisfies AssessmentItem;
 
     const hasItem = calendarItems.some((calendarItem) => calendarItem.id === id);

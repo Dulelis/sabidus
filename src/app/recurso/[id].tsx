@@ -24,6 +24,7 @@ import {
   requestReview,
   requestStudyPlan,
 } from '@/lib/apiClient';
+import { openStudyMaterialUrl } from '@/lib/studyMaterials';
 import { styles } from '@/styles/appStyles';
 
 type ReviewResult = {
@@ -705,6 +706,45 @@ export default function ResourceDetailRoute() {
 
           {selectedVideo ? (
             <View style={styles.formCard}>
+              <Text style={styles.formLabel}>Video selecionado</Text>
+              <Text style={styles.detailBodyText}>
+                {selectedVideo.title} | {selectedVideo.creator}
+              </Text>
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, styles.controlButton]}
+                  onPress={() => {
+                    void openStudyMaterialUrl(selectedVideo.url)
+                      .then(() => {
+                        setFeedbackMessage(`Abrindo "${selectedVideo.title}".`);
+                      })
+                      .catch((error) => {
+                        setFeedbackMessage(
+                          error instanceof Error
+                            ? error.message
+                            : 'Nao foi possivel abrir esse video agora.'
+                        );
+                      });
+                  }}
+                >
+                  <Text style={styles.secondaryButtonText}>Abrir video</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, styles.controlButton]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/pesquisar',
+                      params: {
+                        query: selectedVideo.title,
+                        course: selectedVideo.course.toLowerCase(),
+                      },
+                    })
+                  }
+                >
+                  <Text style={styles.secondaryButtonText}>Buscar relacionados</Text>
+                </TouchableOpacity>
+              </View>
+
               <Text style={styles.formLabel}>Objetivo da videoaula</Text>
               <TextInput
                 style={styles.textArea}

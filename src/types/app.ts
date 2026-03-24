@@ -79,7 +79,7 @@ export type AssessmentItem = {
   id: string;
   title: string;
   subject: string;
-  type: 'Prova' | 'Trabalho';
+  type: 'Prova' | 'Trabalho' | 'Estudo';
   color: string;
   dueDate: string;
 };
@@ -99,6 +99,7 @@ export type VideoLesson = {
   platform: string;
   course: string;
   year: string;
+  url: string;
 };
 
 export type StudyMethod = {

@@ -80,6 +80,52 @@ export function normalizeMaterialUrlInput(value: string) {
   return normalizedValue;
 }
 
+function getYouTubeTargets(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const isYouTube =
+      hostname.includes('youtube.com') ||
+      hostname.includes('youtu.be') ||
+      hostname.includes('m.youtube.com');
+
+    if (!isYouTube) {
+      return null;
+    }
+
+    const videoId =
+      parsedUrl.searchParams.get('v') ||
+      (hostname.includes('youtu.be') ? parsedUrl.pathname.replace(/^\/+/, '') : '');
+    const searchQuery = parsedUrl.searchParams.get('search_query') || '';
+
+    if (videoId) {
+      return {
+        appUrl: `vnd.youtube://watch?v=${videoId}`,
+        fallbackUrl: `https://m.youtube.com/watch?v=${videoId}`,
+        intentUrl: `intent://www.youtube.com/watch?v=${videoId}#Intent;package=com.google.android.youtube;scheme=https;end`,
+      };
+    }
+
+    if (searchQuery) {
+      const encodedQuery = encodeURIComponent(searchQuery);
+
+      return {
+        appUrl: `vnd.youtube://results?search_query=${encodedQuery}`,
+        fallbackUrl: `https://m.youtube.com/results?search_query=${encodedQuery}`,
+        intentUrl: `intent://www.youtube.com/results?search_query=${encodedQuery}#Intent;package=com.google.android.youtube;scheme=https;end`,
+      };
+    }
+
+    return {
+      appUrl: 'vnd.youtube://',
+      fallbackUrl: parsedUrl.toString(),
+      intentUrl: 'intent://www.youtube.com/#Intent;package=com.google.android.youtube;scheme=https;end',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function buildMaterialLabelFromLink(value: string) {
   const normalizedValue = normalizeMaterialUrlInput(value);
 
@@ -214,6 +260,27 @@ export async function openStudyMaterialUrl(url: string) {
 
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     window.open(normalizedUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  const youtubeTargets = getYouTubeTargets(normalizedUrl);
+
+  if (youtubeTargets) {
+    try {
+      await Linking.openURL(youtubeTargets.appUrl);
+      return;
+    } catch {
+      if (Platform.OS === 'android') {
+        try {
+          await Linking.openURL(youtubeTargets.intentUrl);
+          return;
+        } catch {
+          // Fallback below keeps video access available even without the YouTube app.
+        }
+      }
+    }
+
+    await Linking.openURL(youtubeTargets.fallbackUrl);
     return;
   }
 

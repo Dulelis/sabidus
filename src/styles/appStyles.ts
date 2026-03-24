@@ -91,6 +91,14 @@ export const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
   },
+  pickerFieldText: {
+    color: '#0F172A',
+    fontSize: 15,
+  },
+  pickerFieldPlaceholder: {
+    color: '#7D8597',
+    fontSize: 15,
+  },
   searchButton: {
     backgroundColor: '#F97316',
     borderRadius: 16,

@@ -6,7 +6,6 @@ import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import {
   articles,
-  assessments,
   discoveries,
   highlightTopics,
   weeklySchedule,
@@ -296,6 +295,29 @@ export function HomeScreen({
 
     return alerts.slice(0, 4);
   }, [calendarItems, customTasks.length]);
+
+  const upcomingCalendarItems = useMemo(() => {
+    return [...calendarItems]
+      .sort((first, second) => {
+        const firstDate = parseBrazilianDate(first.dueDate);
+        const secondDate = parseBrazilianDate(second.dueDate);
+
+        if (!firstDate && !secondDate) {
+          return first.title.localeCompare(second.title);
+        }
+
+        if (!firstDate) {
+          return 1;
+        }
+
+        if (!secondDate) {
+          return -1;
+        }
+
+        return firstDate.getTime() - secondDate.getTime();
+      })
+      .slice(0, 4);
+  }, [calendarItems]);
 
   function handleOpenHomeAlert(alert: HomeAlert) {
     if (alert.target === 'agenda') {
@@ -1005,23 +1027,26 @@ export function HomeScreen({
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Provas e trabalhos</Text>
+          <Text style={styles.sectionTitle}>Agenda por cor</Text>
           <TouchableOpacity onPress={() => router.push('/agenda')}>
             <Text style={styles.sectionLink}>Separados por cor</Text>
           </TouchableOpacity>
         </View>
-        {assessments.map((assessment) => (
+        {upcomingCalendarItems.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>Nenhum item agendado</Text>
+            <Text style={styles.emptyText}>
+              Provas, trabalhos e estudos cadastrados na agenda vao aparecer aqui com as cores de prioridade.
+            </Text>
+          </View>
+        ) : null}
+        {upcomingCalendarItems.map((assessment) => (
           <TouchableOpacity
             key={assessment.id}
             style={styles.assessmentCard}
             onPress={() => router.push('/agenda')}
           >
-            <View
-              style={[
-                styles.assessmentStripe,
-                { backgroundColor: assessment.color },
-              ]}
-            />
+            <View style={[styles.assessmentStripe, { backgroundColor: assessment.color }]} />
             <View style={styles.assessmentBody}>
               <Text style={styles.articleTitle}>{assessment.title}</Text>
               <Text style={styles.articleDescription}>

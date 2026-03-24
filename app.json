@@ -43,7 +43,8 @@
           "microphonePermission": false,
           "photosPermission": "Permitir que o SabiduS acesse suas fotos e arquivos para estudar."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},

@@ -1,10 +1,38 @@
 import { useState } from 'react';
-import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 
 import { agenda } from '../data/mockData';
 import { styles } from '../styles/appStyles';
 import { useStudy } from '../context/StudyContext';
 import type { AssessmentItem } from '../types/app';
+
+function parseBrazilianDateInput(value: string) {
+  const [dayText, monthText, yearText] = value.split('/');
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+
+  if (
+    Number.isNaN(day) ||
+    Number.isNaN(month) ||
+    Number.isNaN(year) ||
+    !day ||
+    !month ||
+    !year
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function formatBrazilianDate(value: Date) {
+  return `${String(value.getDate()).padStart(2, '0')}/${String(value.getMonth() + 1).padStart(
+    2,
+    '0'
+  )}/${value.getFullYear()}`;
+}
 
 export function AgendaScreen() {
   const {
@@ -23,7 +51,7 @@ export function AgendaScreen() {
   const [eventTitle, setEventTitle] = useState('');
   const [eventSubject, setEventSubject] = useState('');
   const [eventDate, setEventDate] = useState('');
-  const [eventType, setEventType] = useState<'Prova' | 'Trabalho'>('Prova');
+  const [eventType, setEventType] = useState<'Prova' | 'Trabalho' | 'Estudo'>('Prova');
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState(
     'Use esta tela para transformar ideias em tarefas e compromissos.'
@@ -31,6 +59,24 @@ export function AgendaScreen() {
 
   const upcomingCount = calendarItems.length;
   const taskCount = customTasks.length;
+  const sortedCalendarItems = [...calendarItems].sort((first, second) => {
+    const firstDate = parseBrazilianDateInput(first.dueDate);
+    const secondDate = parseBrazilianDateInput(second.dueDate);
+
+    if (!firstDate && !secondDate) {
+      return first.title.localeCompare(second.title);
+    }
+
+    if (!firstDate) {
+      return 1;
+    }
+
+    if (!secondDate) {
+      return -1;
+    }
+
+    return firstDate.getTime() - secondDate.getTime();
+  });
 
   function resetTaskForm(message?: string) {
     setTaskInput('');
@@ -181,6 +227,26 @@ export function AgendaScreen() {
     setEventDate(assessment.dueDate);
     setEventType(assessment.type);
     setFeedbackMessage(`Editando ${assessment.type.toLowerCase()} "${assessment.title}".`);
+  }
+
+  function handleOpenDatePicker() {
+    if (Platform.OS !== 'android') {
+      setFeedbackMessage('No celular Android, use o botao de calendario para escolher a data.');
+      return;
+    }
+
+    const initialDate = parseBrazilianDateInput(eventDate) || new Date();
+
+    DateTimePickerAndroid.open({
+      value: initialDate,
+      mode: 'date',
+      is24Hour: true,
+      onChange: (_event, selectedDate) => {
+        if (selectedDate) {
+          setEventDate(formatBrazilianDate(selectedDate));
+        }
+      },
+    });
   }
 
   return (
@@ -337,7 +403,7 @@ export function AgendaScreen() {
             placeholderTextColor="#7D8597"
           />
           <View style={styles.chipRow}>
-            {(['Prova', 'Trabalho'] as const).map((type) => {
+            {(['Prova', 'Trabalho', 'Estudo'] as const).map((type) => {
               const isActive = eventType === type;
 
               return (
@@ -356,14 +422,18 @@ export function AgendaScreen() {
             })}
           </View>
           <Text style={styles.formLabel}>Data</Text>
-          <TextInput
-            style={styles.searchInput}
-            value={eventDate}
-            onChangeText={setEventDate}
-            placeholder="Ex: 31/03/2026"
-            placeholderTextColor="#7D8597"
-          />
+          <TouchableOpacity style={styles.searchInput} onPress={handleOpenDatePicker}>
+            <Text style={eventDate ? styles.pickerFieldText : styles.pickerFieldPlaceholder}>
+              {eventDate || 'Selecione uma data no calendario'}
+            </Text>
+          </TouchableOpacity>
           <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.secondaryButton, styles.controlButton]}
+              onPress={handleOpenDatePicker}
+            >
+              <Text style={styles.secondaryButtonText}>Abrir calendario</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.searchButton, styles.controlButton]}
               onPress={editingEventId ? handleUpdateEvent : handleAddEvent}
@@ -406,16 +476,16 @@ export function AgendaScreen() {
           </View>
         </View>
 
-        {calendarItems.length === 0 ? (
+        {sortedCalendarItems.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Nenhum evento cadastrado</Text>
             <Text style={styles.emptyText}>
-              Registre provas e trabalhos para acompanhar o calendario da semana.
+              Registre provas, trabalhos e estudos para acompanhar o calendario da semana.
             </Text>
           </View>
         ) : null}
 
-        {calendarItems.map((assessment) => (
+        {sortedCalendarItems.map((assessment) => (
           <View
             key={assessment.id}
             style={[

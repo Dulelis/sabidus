@@ -182,7 +182,7 @@ export const assessments: AssessmentItem[] = [
     id: 'aval-3',
     title: 'Simulado ENEM de ciencias humanas',
     subject: 'Filosofia',
-    type: 'Prova',
+    type: 'Estudo',
     color: '#0F766E',
     dueDate: '29/03/2026',
   },
@@ -254,6 +254,7 @@ export const videoLessons: VideoLesson[] = [
     platform: 'YouTube',
     course: 'Biologia',
     year: '2025',
+    url: 'https://www.youtube.com/results?search_query=Citologia+do+zero+Samuel+Cunha',
   },
   {
     id: 'video-2',
@@ -263,6 +264,7 @@ export const videoLessons: VideoLesson[] = [
     platform: 'YouTube',
     course: 'Pedagogia',
     year: '2024',
+    url: 'https://www.youtube.com/results?search_query=Didatica+e+planejamento+docente+pedagogia',
   },
   {
     id: 'video-3',
@@ -272,6 +274,7 @@ export const videoLessons: VideoLesson[] = [
     platform: 'Plataforma aberta',
     course: 'Filosofia',
     year: '2023',
+    url: 'https://www.youtube.com/results?search_query=Filosofia+para+iniciantes+Instituto+Humanidades',
   },
   {
     id: 'video-4',
@@ -281,6 +284,7 @@ export const videoLessons: VideoLesson[] = [
     platform: 'YouTube',
     course: 'Educacao Fisica',
     year: '2025',
+    url: 'https://www.youtube.com/results?search_query=Jogos+movimento+planejamento+educacao+fisica',
   },
 ];
 
